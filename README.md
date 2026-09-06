@@ -1,5 +1,8 @@
 # aforth
 
+[![macOS](https://github.com/dykstrom/aforth/actions/workflows/macos.yml/badge.svg?branch=main)](https://github.com/dykstrom/aforth/actions/workflows/macos.yml)
+[![Linux](https://github.com/dykstrom/aforth/actions/workflows/linux.yml/badge.svg?branch=main)](https://github.com/dykstrom/aforth/actions/workflows/linux.yml)
+
 A Forth system written in ARM64 assembly, targeting Forth-2012.
 
 ## Status
