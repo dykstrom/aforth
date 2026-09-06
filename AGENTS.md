@@ -39,6 +39,12 @@ docs/
 └── working-notes/  ← research; NOT authoritative — rules live in architecture/ + adr/
 ```
 
+`docs/architecture/design-goals.md` holds the binding rules, drawn from the ADRs in
+`docs/adr/`. Read it before writing implementation code: several rules forbid the
+obvious approach. The dictionary may hold no absolute code addresses and aforth
+generates no code at runtime (ADR 0005), text is UTF-8 bytes with no wide-character
+representation (ADR 0004), and configuration is Forth source with no parser (ADR 0003).
+
 ## Commands
 
 | What | Command |

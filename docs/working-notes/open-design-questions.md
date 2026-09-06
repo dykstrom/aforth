@@ -24,6 +24,13 @@ Apache-2.0, copyright Johan Dykström. Decided in
 and turnkey binaries stay unconstrained, plus an explicit patent grant that MIT and BSD-2-Clause do
 not give.
 
+### Where configuration lives
+
+`$XDG_CONFIG_HOME/aforth/`, falling back to `~/.config/aforth/`, with an `init.f` of Forth source
+rather than a parsed configuration format. Decided in
+[ADR 0003](../adr/0003-configuration-in-xdg-dir-as-forth-source.md), which records why: the
+interpreter already exists, so executing Forth source needs no parser.
+
 ### How the source tree is laid out
 
 One flat `src/` directory of `.S` files, with `src/include/` for headers. Every macOS/Linux
@@ -33,7 +40,4 @@ Split by subsystem later if the flat directory stops being readable.
 
 ## Open questions
 
-### Where configuration lives
-
-The design goal is that aforth reads init files on cold start and that the user can configure the
-editor. A directory such as `~/.config/aforth` is one option; the mechanism is not chosen.
+None. Every question this note opened has been decided and recorded as an ADR.
