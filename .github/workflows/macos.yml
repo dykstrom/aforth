@@ -1,0 +1,29 @@
+# Build and test on macOS/ARM64, the primary development platform.
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build and test
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # clang and make come with the preinstalled Xcode command line tools.
+      - name: Show toolchain
+        run: |
+          clang --version
+          make --version
+
+      - name: Build
+        run: make
+
+      - name: Test
+        run: make test
