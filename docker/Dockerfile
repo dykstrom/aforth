@@ -6,8 +6,8 @@
 FROM debian:stable-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends clang make \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends clang make \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /aforth
 COPY Makefile ./
