@@ -10,8 +10,17 @@ TEST_DIR := test
 
 CC       := clang
 # .S sources are preprocessed, so -I and -MMD apply as they do for C.
-ASFLAGS  := -g -Wall -I$(SRC_DIR)/include -MMD -MP
+# EXTRA_ASFLAGS is for the command line: a variable set there replaces the
+# assignment here rather than adding to it, so ASFLAGS itself cannot be
+# extended from outside. Use it as make EXTRA_ASFLAGS=-DAFORTH_NO_STACK_CHECKS.
+EXTRA_ASFLAGS :=
+ASFLAGS  := -g -Wall -I$(SRC_DIR)/include -MMD -MP $(EXTRA_ASFLAGS)
 LDFLAGS  :=
+# The line-editing library. aforth links libedit: it needs nothing installed on
+# macOS and the libedit-dev package on Linux. Someone building aforth for
+# themselves can link GNU readline instead, which exposes the same symbols, by
+# overriding this on the command line.
+LDLIBS   := -ledit
 
 SRCS := $(wildcard $(SRC_DIR)/*.S)
 OBJS := $(SRCS:$(SRC_DIR)/%.S=$(BUILD)/%.o)
@@ -22,8 +31,10 @@ BIN  := $(BUILD)/$(BIN_NAME)
 
 all: $(BIN)
 
+# The library goes after the objects: a shared library named before the objects
+# that need it satisfies nothing, and the Linux linker then drops it.
 $(BIN): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
 $(BUILD)/%.o: $(SRC_DIR)/%.S | $(BUILD)
 	$(CC) $(ASFLAGS) -c -o $@ $<
@@ -34,8 +45,11 @@ $(BUILD):
 run: $(BIN)
 	./$(BIN)
 
+# The flags go to the suite because it has to know what is in the binary: the
+# build without the stack guards has no guard to fire, so the cases that expect
+# a guard's message are skipped there rather than failing.
 test: $(BIN)
-	$(TEST_DIR)/run-tests.sh ./$(BIN)
+	AFORTH_ASFLAGS='$(ASFLAGS)' $(TEST_DIR)/run-tests.sh ./$(BIN)
 
 # Linux/ARM64 build and test, per the portability goal.
 docker-test:

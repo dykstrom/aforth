@@ -41,3 +41,7 @@ Split by subsystem later if the flat directory stops being readable.
 ## Open questions
 
 None. Every question this note opened has been decided and recorded as an ADR.
+
+Questions raised later live in their own notes:
+[dispatch-cost-of-index-code-fields.md](dispatch-cost-of-index-code-fields.md) asks whether the
+region needs a fixed address once save and restore exist.

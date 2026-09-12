@@ -5,8 +5,10 @@
 #   docker build --platform linux/arm64 -f docker/Dockerfile -t aforth-linux .
 FROM debian:stable-slim
 
+# libedit-dev is the line-editing library aforth links (ADR 0001). macOS has it
+# as a system library; on Debian it is a package.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends clang make \
+    && apt-get install -y --no-install-recommends clang make libedit-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /aforth

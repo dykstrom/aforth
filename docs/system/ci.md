@@ -12,5 +12,6 @@ no runner or bills for it. Runner labels are pinned — `macos-15`, not
 without a commit.
 
 macOS needs no install step: clang and make ship with the runner's Xcode command
-line tools. Linux installs `clang` and `make` with apt. `docker/Dockerfile`
-covers the same Linux build locally, from a macOS machine.
+line tools, and libedit is a system library there. Linux installs `clang`,
+`make` and `libedit-dev` with apt. `docker/Dockerfile` installs the same three
+and covers the Linux build locally, from a macOS machine.

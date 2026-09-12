@@ -7,8 +7,9 @@ A Forth system written in ARM64 assembly, targeting Forth-2012.
 
 ## Status
 
-Early development. The build skeleton prints a banner and exits; no Forth is
-implemented yet.
+Early development. aforth reads Forth at a prompt and runs it until `BYE` or
+end of input. The stack, arithmetic, logic, memory, output, input and parsing
+words are in place. There is no way to define a word yet.
 
 ## Platforms
 
@@ -16,7 +17,7 @@ macOS/ARM64 (primary) and Linux/ARM64.
 
 ## Building
 
-Requires make and clang.
+Requires make, clang and libedit (a system library on macOS; `libedit-dev` on Linux).
 
     make        # build build/aforth
     make run    # build and run

@@ -18,10 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install clang and make
+      # libedit-dev is the line-editing library aforth links (ADR 0001).
+      - name: Install clang, make and libedit
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang make
+          sudo apt-get install -y --no-install-recommends clang make libedit-dev
 
       - name: Show toolchain
         run: |
