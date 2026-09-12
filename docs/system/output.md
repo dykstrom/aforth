@@ -81,10 +81,9 @@ stack exactly as it found it.
 
 ## Where the tests are
 
-The words' stack effects are in `word_tests`, which runs before the banner: a
-case that printed would land above it. What they print is checked by
-`test/run-tests.sh`, which feeds the binary Forth source and compares what comes
-out.
+`test/cases/output.sh`, which feeds the binary Forth source and compares the
+bytes that come out: what each word prints, what a number looks like in each
+`BASE`, and what `.S` shows. See [testing.md](testing.md).
 
 Errors do not come this way. They go to file descriptor 2 through
 `write_stderr`, and what each one says is in

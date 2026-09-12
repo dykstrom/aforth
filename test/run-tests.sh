@@ -6,13 +6,17 @@
 # Usage: test/run-tests.sh ./build/aforth
 #
 # Every case pipes Forth source in and compares what comes out. The binary
-# reads until end of input, so each run gets a whole script on stdin. Ticket
-# 009 builds this out into a suite with a case per word; what is here covers
-# the outer interpreter itself.
+# reads until end of input, so each case gets its own run with a whole script
+# on stdin. The cases themselves are in test/cases/, one file per kind of word,
+# mirroring src/words/. This file holds the helpers they are written with, the
+# order they run in, and the coverage check at the end.
+#
+# See docs/system/testing.md for how to write a case.
 
 set -eu
 
 BIN="${1:-./build/aforth}"
+HERE=$(dirname "$0")
 failures=0
 
 check() {
@@ -32,112 +36,108 @@ check() {
 # Run the source in $1 and print what reaches stdout, the banner dropped.
 # Errors go to file descriptor 2, so they are not in what this returns.
 out() {
-  printf '%s' "$1" | "$BIN" 2>/dev/null | sed 1d
+  printf '%s\n' "$1" | "$BIN" 2>/dev/null | sed 1d
 }
 
 # The same, but what reaches file descriptor 2.
 err() {
-  printf '%s' "$1" | "$BIN" 2>&1 >/dev/null
+  printf '%s\n' "$1" | "$BIN" 2>&1 >/dev/null
 }
 
-check "prints its banner" "aforth 0.0.0" \
-  "$(printf '' | "$BIN" 2>/dev/null | sed -n 1p)"
+# The four helpers a case is written with. Each takes the case's name first,
+# then the Forth source, then what that source should produce. A case needing
+# more than one line puts a newline in the source.
+#
+#   prints "DUP copies the top"  '1 7 DUP .S'  '<3> 1 7 7  ok'
+#   raises "/ by zero"           '1 0 /'       'aforth: divide by zero'
+#   exits  "BYE exits"           '1 . BYE'     0
+#   guards "ROT"                 'ROT'         2
+#
+# A stack effect is asserted by printing the stack with .S , which is what the
+# expected string of a prints case usually holds.
+prints() {
+  check "$1" "$3" "$(out "$2")"
+}
 
-# A line that runs without error ends in ok, so the first case proves the whole
-# loop: refill, parse, look up, convert a number, execute, and report.
-check "interprets a line" "5  ok" "$(out '2 3 + .
-')"
+raises() {
+  check "$1" "$3" "$(err "$2")"
+}
 
-# DECIMAL and HEX are run by the same loop that then converts FF, so this fails
-# unless BASE is read for every name rather than once a line.
-check "follows BASE within a line" "FF 255  ok" "$(out 'HEX FF . DECIMAL 255 .
-')"
+exits() {
+  status=0
+  printf '%s\n' "$2" | "$BIN" >/dev/null 2>&1 || status=$?
+  check "$1" "$3" "$status"
+}
 
-check "converts a negative number" "-42  ok" "$(out '-42 .
-')"
+# One depth guard: run the word with the number of items it wants less one, and
+# expect the error rather than a wild read. The count reads as the word's
+# requirement minus one, so the guards file is also the one place every word's
+# arity is written down.
+guards() {
+  guard_name="$1"
+  guard_source="$2"
+  guard_depth="$3"
+  guard_message="${4:-aforth: data stack underflow}"
+  guard_stack=""
+  guard_i=0
+  while [ "$guard_i" -lt "$guard_depth" ]; do
+    guard_stack="$guard_stack 0"
+    guard_i=$((guard_i + 1))
+  done
+  check "$guard_name guards its depth" "$guard_message" \
+    "$(err "$guard_stack $guard_source")"
+}
 
-check "says ok on an empty line" " ok" "$(out '
-')"
+. "$HERE/cases/stack.sh"
+. "$HERE/cases/arithmetic.sh"
+. "$HERE/cases/memory.sh"
+. "$HERE/cases/output.sh"
+. "$HERE/cases/input.sh"
+. "$HERE/cases/parsing.sh"
+. "$HERE/cases/outer.sh"
 
-# Three lines, so the ok after each one has to be its own.
-check "says ok once per line" "1  ok
-2  ok
-3  ok" "$(out '1 .
-2 .
-3 .
-')"
-
-# The errors. Each names what failed, and nothing reaches stdout.
-check "names an undefined word" "aforth: undefined word: fnord" "$(err 'fnord
-')"
-
-# ' raises the same error through the same routine, so the two agree.
-check "names a word ' cannot find" "aforth: undefined word: fnord" "$(err "' fnord
-")"
-
-# A guard's message is only there to check when the build carries the guards.
-# make passes its assembler flags in AFORTH_ASFLAGS so that this can tell.
+# The guards have nothing to fire in the build that compiles them out, which is
+# the point of that build, so the whole file is left out of it. make passes its
+# assembler flags in AFORTH_ASFLAGS so that this can tell.
 case "${AFORTH_ASFLAGS:-}" in
   *-DAFORTH_NO_STACK_CHECKS*)
-    echo "skip - reports a stack underflow (built without the guards)"
+    echo "skip - the depth guards (built without them)"
     ;;
   *)
-    check "reports a stack underflow" "aforth: data stack underflow" "$(err 'DUP
-')"
+    . "$HERE/cases/guards.sh"
     ;;
 esac
 
-check "reports a divide by zero" "aforth: divide by zero" "$(err '1 0 /
-')"
+# Every word needs a case.
+#
+# It takes the name out of every DEFCODE and DEFWORD in the sources and fails
+# naming any word no case mentions. A hidden word is skipped: (STOP) cannot be
+# reached by name.
+#
+# It is a search for the name, not proof that the case tests the word. A case
+# still has to be written so that it fails when the word is broken.
+#
+# A case file is split on white space and each token stripped of one quote at
+# either end, so that the word in '1 7 DUP .S' is found as DUP and the word in
+# "' fnord" as ' .
+case_tokens=$(cat "$HERE"/cases/*.sh |
+  tr '\t' ' ' | tr ' ' '\n' |
+  sed -e p -e "s/^[\"']//" -e "s/[\"']\$//" |
+  sed '/^$/d' | sort -u)
 
-# Filling the data stack by typing numbers goes through the interpreter's own
-# room check rather than the ROOM macro, which would unwind to a frame that is
-# already gone. Nothing else exercises that check. The stack holds 8192 cells
-# and a line holds 4096 bytes, so it takes five lines to fill.
-numbers=' 1'
-while [ "${#numbers}" -lt 4080 ]; do numbers="$numbers$numbers"; done
-check "reports an overflow from typed numbers" "aforth: data stack overflow" \
-  "$(err "$numbers
-$numbers
-$numbers
-$numbers
-$numbers
-")"
+uncovered=$(
+  grep -hE '^[[:space:]]+DEF(CODE|WORD)' "$HERE"/../src/words/*.S \
+      "$HERE"/../src/interpreter.S |
+    grep -v F_HIDDEN |
+    sed -e 's/^[^"]*"//' -e 's/".*$//' |
+    sort -u |
+    while read -r word; do
+      printf '%s\n' "$case_tokens" | grep -qxF -- "$word" ||
+        printf '%s ' "$word"
+    done
+)
 
-# An error ends the line it happened on: the . after the bad name never runs.
-check "drops the rest of a failed line" "" "$(out 'fnord 1 .
-')"
-
-# And the line after it does run, which is the whole point of ABORT over exit.
-check "carries on after an error" "1  ok" "$(out 'fnord
-1 .
-')"
-
-# ABORT empties the data stack, so .S on the next line counts nothing.
-check "ABORT empties the data stack" "<0>  ok" "$(out '1 2 ABORT
-.S
-')"
-
-check "ABORT prints no message" "" "$(err '1 2 ABORT
-')"
-
-# QUIT leaves the data stack alone, which is what tells it from ABORT.
-check "QUIT keeps the data stack" "<2> 1 2  ok" "$(out '1 2 QUIT
-.S
-')"
-
-# BYE ends the process, so the line after it is never read.
-check "BYE stops reading" "1  ok" "$(out '1 .
-BYE
-99 .
-')"
-printf '1 .\nBYE\n99 .\n' | "$BIN" >/dev/null 2>&1 || bye_status=$?
-check "BYE exits successfully" "0" "${bye_status:-0}"
-
-# End of input ends the session the same way, and prints a newline so that a
-# terminal's next prompt starts on a line of its own.
-printf '1 .\n' | "$BIN" >/dev/null 2>&1 || eof_status=$?
-check "exits successfully at end of input" "0" "${eof_status:-0}"
+check "every word has a case" "" "$uncovered"
 
 if [ "$failures" -ne 0 ]; then
   echo "$failures test(s) failed"

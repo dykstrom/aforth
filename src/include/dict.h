@@ -178,7 +178,6 @@ dict_image_end:
 ent_\label:
         .quad   dict_prev               // link
         .set    dict_prev, dict_off
-        .set    ENTOF_\label, dict_off  // the entry itself, for a test table
         .byte   \flags
         .byte   \len
 1:      .ascii  "\name"

@@ -77,9 +77,7 @@ hold, so the word and the interpreter cannot disagree about what a number is.
 
 ## Where the tests are
 
-The parsing words cannot be tested from the `word_tests` table: they read
-`SOURCE`, nothing can point `SOURCE` at a test buffer, and a case that refilled
-would eat a line of the piped script. The search and the conversion are in the
-table, over counted strings in writable data; `PARSE-NAME`, `PARSE`, `WORD`,
-`CHAR` and `'` are checked by `test/run-tests.sh`, which feeds the binary Forth
-source.
+`test/cases/parsing.sh`. A case for one of these words is written on the line
+the word parses, and a case for the search or the conversion builds its string
+with `WORD` or `PARSE-NAME` rather than naming one in memory. See
+[testing.md](testing.md).

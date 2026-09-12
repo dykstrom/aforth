@@ -249,9 +249,9 @@ hold_write:
 
 // .S shows the stack without disturbing it, so it reads the items rather than
 // popping them: the i-th from the bottom is at S0 - 8 * (i + 2) and the top is
-// the cached one, which is the arithmetic machine_test_words does too. The
-// depth and the items both go through the hold buffer, so .S follows BASE like
-// every other printing word. An empty stack prints <0> and nothing else.
+// the cached one. The depth and the items both go through the hold buffer, so
+// .S follows BASE like every other printing word. An empty stack prints <0>
+// and nothing else.
 //
 // The count and the index live in x27 and x28, the two registers a word may
 // keep a value in across a call.

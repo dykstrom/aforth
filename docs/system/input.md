@@ -79,6 +79,15 @@ can see the truncation.
 false flag is end of input and ends the session. See
 [outer-interpreter.md](outer-interpreter.md).
 
-No case in `word_tests` may call `REFILL`, `ACCEPT` or `KEY`. That table runs
-before `QUIT` does, so a case that read input would eat a line of the piped
-script and leave the suite's checks depending on the order the cases are in.
+`REFILL` pushes a flag, so it needs one free cell on the data stack. The stack
+area holds 8192 cells, and a line can therefore leave at most 8191 of them
+occupied. A line that fills the stack to the brim still reports `ok`, and the
+`REFILL` starting the next line then raises `ERR_DS_OVERFLOW` before it reads
+anything: the message arrives after the line that caused it and names no word.
+`test/cases/guards.sh` counts the lines that reported `ok` for that reason, the
+message alone being unable to say which guard fired.
+
+A case for `REFILL`, `ACCEPT` or `KEY` is in `test/cases/input.sh`, and it is
+written knowing what the suite pipes in: the word reads the rest of the case's
+own source, so the case carries the line it will read. See
+[testing.md](testing.md).

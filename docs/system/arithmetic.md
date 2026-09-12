@@ -31,7 +31,7 @@ this.
 ## A double is two cells, high one on top
 
 `UM*`, `M*` and the double-dividend words keep the high cell above the low one,
-so a case reading `.quad 3, 0, 1, 3` is the double 2^64 divided by 3.
+so a case reading `0 1 3 UM/MOD` is the double 2^64 divided by 3.
 
 ARM64 divides 64 bits by 64, not 128, so `UM/MOD` and its signed neighbours go
 through `udiv128` in `src/interpreter.S`: one `udiv` when the high cell is

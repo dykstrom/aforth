@@ -108,9 +108,13 @@
 
 // The mixed precision words. A double is two cells with the high one on top,
 // so UM* and M* leave the high half in the cached top.
+//
+// Neither pushes, so neither needs ROOM: the low half replaces the second item
+// in place through DSETM and the high half goes in the cached top, and DSP
+// never moves. Two items in, two items out, and no cell beyond the two NEED
+// already checked is ever written.
         DEFCODE "UM*", 3, um_star       // ( u1 u2 -- ud )
         NEED    2
-        ROOM    1
         DGETM   0, x0                   // x0 = u1
         mul     x1, x0, TOS             // the low half
         umulh   x2, x0, TOS             // the high half
@@ -120,7 +124,6 @@
 
         DEFCODE "M*", 2, m_star         // ( n1 n2 -- d )
         NEED    2
-        ROOM    1
         DGETM   0, x0
         mul     x1, x0, TOS
         smulh   x2, x0, TOS

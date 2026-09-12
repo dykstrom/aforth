@@ -49,15 +49,6 @@ CSYM(main):
         bl      machine_init
         cbz     x0, main_failed         // it already reported why
 
-        // Every word gets its cases run before aforth says anything at all.
-        // A failure reports the word and exits, so silence here is a pass.
-        adr_sym x0, word_tests
-        bl      machine_test_words
-#ifndef AFORTH_NO_STACK_CHECKS
-        adr_sym x0, word_guards
-        bl      machine_test_guards
-#endif
-
         adr_sym x0, banner
         bl      puts_stdout
 

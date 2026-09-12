@@ -75,8 +75,6 @@
 
         DICT_END
 
-#include "words/tests.S"
-
         .text
 
 // Fill the index-to-address table.
@@ -138,9 +136,9 @@ machine_load_dictionary:
 // again from inside it would lose the outer frame. Nothing does that yet.
 //
 // Returns 0 when the list ran to its end. A routine that unwinds the machine
-// early goes through enter_return with its own value in x0, which is how the
-// word tests tell an aborted case from a finished one, and how ticket 008 will
-// carry an error out of ABORT.
+// early goes through enter_return with its own value in x0, which is how
+// machine_quit learns what failed and how ABORT and QUIT leave without
+// returning to the word that ran them.
         .p2align        2
         .globl  aforth_enter
         FUNC_TYPE(aforth_enter)

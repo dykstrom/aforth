@@ -46,8 +46,9 @@ use x27 and x28, and `ACCEPT` does, so the name last parsed lives in
 Every guard, every word that raises, and both of `ABORT` and `QUIT` go through
 `machine_error` to the routine in `UV_ABORT`. That routine is `quit_abort`, and
 it is one instruction: leave the machine through `enter_return`, carrying the
-error number as `aforth_enter`'s result. It prints nothing itself, so a word
-test that expects an error stays silent.
+error number as `aforth_enter`'s result. It prints nothing itself: what a number
+means is `machine_quit`'s to decide, which is how `ABORT` and `QUIT` leave the
+machine the way an error does and still say nothing.
 
 `machine_quit` reads the number and decides.
 
@@ -107,13 +108,13 @@ typed rather than once per word executed, so it is not what ticket 012 prices.
 
 ## What the tests cover
 
-`test/run-tests.sh` pipes Forth source in and compares what comes out, which is
-where the loop's own behaviour is checked: `ok` per line, each message, that an
-error ends its line and the next line still runs, and what `ABORT` and `QUIT`
-each empty. `word_tests` covers `STATE`, `ABORT` and `QUIT` as words; `BYE`
-cannot go in that table, because it ends the process.
+`test/cases/outer.sh` holds the loop's own behaviour: `ok` per line, `BASE` read
+for every name rather than once a line, each message, that an error ends its
+line and the next line still runs, what `ABORT` and `QUIT` each empty, and the
+exit status after `BYE` and after end of input. `STATE`, `ABORT`, `QUIT` and
+`BYE` are checked there as words as well.
 
-The build without the guards has no underflow to report, so the suite skips that
-one case. `make` passes its assembler flags to the script in `AFORTH_ASFLAGS` so
-that it can tell, which means the flag and the `test` target must be on one
-command line: `make EXTRA_ASFLAGS=-DAFORTH_NO_STACK_CHECKS test`.
+What `ABORT` and `QUIT` empty on the return stack is in `test/cases/guards.sh`
+instead, because `RNEED` is the only thing that can see it. The build without
+the guards has no underflow to report, so the suite leaves that file out and
+says so. See [testing.md](testing.md).

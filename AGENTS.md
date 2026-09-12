@@ -9,9 +9,8 @@ build and run on Linux/ARM64. Development has just started. The machine model, t
 inner interpreter, the stack words, the arithmetic, logic and memory words, the
 text and number output words, the input words, the parsing and lookup words and
 the outer interpreter are in place. The binary builds its dictionary at
-start-up, checks every word against a table of cases, prints a banner, and then
-reads and runs Forth until BYE or end of input. There is no way to define a word
-yet.
+start-up, prints a banner, and then reads and runs Forth until BYE or end of
+input. There is no way to define a word yet.
 
 ## Stack
 
@@ -28,10 +27,10 @@ yet.
 
 | Path | What's there |
 |------|-------------|
-| `src/` | ARM64 assembly sources. `aforth.S` holds `main`; `machine.S` allocates the region, starts the machine and holds every routine that reaches libc for input or output; `interpreter.S` holds `DOCOL`, `EXIT`, `EXECUTE`, `(STOP)`, the start-up routines and `aforth_enter`, and builds the dictionary image by including the files in `src/words/`; `outer.S` holds the `QUIT` loop, the one error path and the error messages; `selftest.S` runs the word test cases. |
-| `src/words/` | The built-in words, one file per kind: `stack.S`, `arithmetic.S`, `memory.S`, `output.S`, `input.S`, `parsing.S`, `quit.S`, and `tests.S` for the two test tables. These are `#include`d by `interpreter.S`, not assembled on their own: every entry has to be in one assembler pass. Include order is definition order. See `docs/system/inner-interpreter.md` for which file a new word goes in. |
+| `src/` | ARM64 assembly sources. `aforth.S` holds `main`; `machine.S` allocates the region, starts the machine and holds every routine that reaches libc for input or output; `interpreter.S` holds `DOCOL`, `EXIT`, `EXECUTE`, `(STOP)`, the start-up routines and `aforth_enter`, and builds the dictionary image by including the files in `src/words/`; `outer.S` holds the `QUIT` loop, the one error path and the error messages. |
+| `src/words/` | The built-in words, one file per kind: `stack.S`, `arithmetic.S`, `memory.S`, `output.S`, `input.S`, `parsing.S` and `quit.S`. These are `#include`d by `interpreter.S`, not assembled on their own: every entry has to be in one assembler pass. Include order is definition order. See `docs/system/inner-interpreter.md` for which file a new word goes in. |
 | `src/include/` | Headers included by the sources. `platform.h` holds every macOS/Linux difference; `machine.h` holds the register convention, the region layout and the stack macros; `dict.h` holds the dictionary format and the macros that define a word. |
-| `test/` | `run-tests.sh` pipes Forth source into the built binary and checks its output and exit status. Some words are still tested from inside the binary, from a table `selftest.S` walks; see `docs/system/inner-interpreter.md`. |
+| `test/` | `run-tests.sh` holds the helpers and the run order; the cases are in `test/cases/`, one file per kind of word, mirroring `src/words/`. Every case pipes Forth source into the built binary and compares its output, its error output or its exit status. See `docs/system/testing.md`. |
 | `docker/` | `Dockerfile` for the Linux/ARM64 build and test environment. |
 | `.github/workflows/` | CI. `macos.yml` and `linux.yml` each run `make` then `make test` on their platform. |
 | `build/` | Build output. Generated, git-ignored. |
