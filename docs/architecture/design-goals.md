@@ -12,6 +12,13 @@ The goals are not ranked, except where a rule states a trade-off.
 ## Standard
 
 - aforth MUST implement Forth-2012.
+- aforth MAY implement a word outside the Core word set — one from Core Extensions, one from
+  another word set, or one from no standard at all — when it simplifies the work in hand. Core
+  Extensions is already well represented: `NIP TUCK PICK ROLL TRUE FALSE <> 0<> 0> U> 2>R 2R> 2R@
+  HEX ERASE .R U.R PARSE PARSE-NAME REFILL UNUSED`. `.S` is from Programming-Tools, and `?NUMBER`
+  is not a Forth-2012 word at all.
+- A word that is not in Forth-2012 at all MUST be recorded as such in the `docs/system/` file for
+  its area, so that a reader can tell what is portable Forth from what is aforth's own.
 
 ## Platforms and language
 

@@ -28,12 +28,12 @@ prints "says ok once per line" '1 .
 
 prints "EXECUTE runs a token"        "1 2 ' + EXECUTE ." '3  ok'
 
-# STATE is written and read back, and how far its address lies from BASE's is
-# checked as well. Writing and reading alone is not enough: this case passed
-# against a STATE that handed out BASE's address, because any writable cell
-# gives back what was put in it. The distance is the one machine.h sets,
-# UV_STATE minus UV_BASE.
-prints "STATE is its own cell"  'STATE BASE - . TRUE STATE ! STATE @ .' '8 -1  ok'
+# How far STATE's address lies from BASE's is checked as well as what it holds.
+# Reading alone is not enough: this case passed against a STATE that handed out
+# BASE's address, because any writable cell reads back. The distance is the one
+# machine.h sets, UV_STATE minus UV_BASE. What STATE holds while the loop is
+# compiling is in test/cases/compile.sh, where something can be compiling.
+prints "STATE is its own cell"  'STATE BASE - . STATE @ .' '8 0  ok'
 
 # The errors. Each names what failed, and nothing reaches stdout.
 raises "names an undefined word"     'fnord'   'aforth: undefined word: fnord'

@@ -10,11 +10,20 @@
 // comes out of the machine the same way, through the vector in UV_ABORT, and
 // is reported here. See docs/system/outer-interpreter.md.
 //
+// When STATE says compiling, the same two answers are compiled instead: a
+// word's token goes into the definition being built, and a number goes in as a
+// literal. A word marked immediate runs whichever way STATE reads, which is how
+// ; and [ get a chance to end the definition. See docs/system/compiling.md.
+//
 // The loop is assembly because a token list cannot branch until ticket 011.
 // The words it reaches into the machine for are in src/interpreter.S:
 // parse_name_impl, dict_find, number_impl, machine_refill and machine_execute.
+//
+// dict.h rather than machine.h, for F_IMMEDIATE: the loop reads an entry's
+// flags to decide whether a word runs while the loop is compiling. It defines
+// no storage, so including it here builds nothing into this object file.
 
-#include "machine.h"
+#include "dict.h"
 
         SECTION_RODATA
         .p2align        3
@@ -48,6 +57,12 @@ msg_line_too_long:
         .asciz  "aforth: input line too long"
 msg_undefined_word:
         .asciz  "aforth: undefined word"
+msg_no_name:
+        .asciz  "aforth: name expected"
+msg_name_too_long:
+        .asciz  "aforth: name too long"
+msg_dict_full:
+        .asciz  "aforth: dictionary full"
 
         .text
 
@@ -93,6 +108,19 @@ quit_name:
         bl      dict_find
         cbz     x0, quit_number
 
+        // Compiling, and the word is not immediate: its token goes into the
+        // definition being built instead of being run. dict_comma reports
+        // rather than raises, because a raise here would unwind to a frame
+        // that has already been popped.
+        ldr     x2, [UP, #UV_STATE]
+        cbz     x2, quit_run
+        tst     w1, #F_IMMEDIATE
+        b.ne    quit_run
+        bl      dict_comma
+        cbz     x0, quit_name
+        b       quit_failed
+
+quit_run:
         bl      machine_execute
         cbz     x0, quit_name           // the word ran to its end
         cmp     x0, #ERR_QUIT
@@ -108,6 +136,9 @@ quit_number:
         bl      number_impl
         cbz     x1, quit_undefined
 
+        ldr     x2, [UP, #UV_STATE]
+        cbnz    x2, quit_literal
+
         // ROOM cannot be used here. It branches through the vector to
         // enter_return, which puts sp back to the frame of the last
         // aforth_enter, and that frame was popped when the word before this
@@ -119,6 +150,14 @@ quit_number:
         b.lt    quit_overflow
         DPUSH   x0
         b       quit_name
+
+// Compiling, so the number is compiled as a literal rather than pushed. The
+// routine is in src/interpreter.S, because (LIT)'s token is a symbol only the
+// assembler building that file has.
+quit_literal:
+        bl      dict_compile_literal
+        cbz     x0, quit_name
+        b       quit_failed
 
 quit_undefined:
         ldr     x0, [sp, #16]
@@ -174,7 +213,7 @@ quit_report:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
 
-        cmp     x0, #ERR_UNDEFINED_WORD
+        cmp     x0, #ERR_DICT_FULL
         b.hi    qr_done
 
         cmp     x0, #ERR_DS_OVERFLOW
@@ -191,6 +230,12 @@ quit_report:
         b.eq    qr_line_too_long
         cmp     x0, #ERR_UNDEFINED_WORD
         b.eq    qr_undefined_word
+        cmp     x0, #ERR_NO_NAME
+        b.eq    qr_no_name
+        cmp     x0, #ERR_NAME_TOO_LONG
+        b.eq    qr_name_too_long
+        cmp     x0, #ERR_DICT_FULL
+        b.eq    qr_dict_full
         adr_sym x0, msg_ds_underflow
         b       qr_write
 qr_ds_overflow:
@@ -210,6 +255,15 @@ qr_hold_overflow:
         b       qr_write
 qr_line_too_long:
         adr_sym x0, msg_line_too_long
+        b       qr_write
+qr_no_name:
+        adr_sym x0, msg_no_name
+        b       qr_write
+qr_name_too_long:
+        adr_sym x0, msg_name_too_long
+        b       qr_write
+qr_dict_full:
+        adr_sym x0, msg_dict_full
         b       qr_write
 
 // The one error that names a word. The name is in the user area, put there by

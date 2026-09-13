@@ -18,7 +18,7 @@ and the region in `src/include/machine.h`.
 
 An execution token is the offset of a code field from `DBASE`. Nothing in the
 dictionary is an address, so an entry means the same thing in a process that
-loaded the binary somewhere else. `dict_find` in `src/interpreter.S` is the
+loaded the binary somewhere else. `dict_find` in `src/words/parsing.S` is the
 search that turns a name into one of those tokens; see [parsing.md](parsing.md).
 
 The dictionary's first cell is reserved, so no entry and no code field lies at
@@ -42,7 +42,14 @@ stack instead of the list.
 `DOCOL` is the code field of every colon definition: it pushes `IP` on the
 return stack and points `IP` at the parameter field. `EXIT` pops it back.
 Neither is reached by name; `DOCOL` has no entry at all, because it is not a
-word.
+word. `DOCON` and `DOVAR` are the other two code fields, for a word made by
+`CONSTANT` and one made by `CREATE`, and they have no entry either. See
+[compiling.md](compiling.md).
+
+`F_IMMEDIATE` and `F_HIDDEN` are both read by then. The outer interpreter runs
+an immediate word rather than compiling it, and `dict_find` walks past a hidden
+one — which is what `(STOP)` and `(LIT)` are, and what a definition is between
+`:` and `;`.
 
 ## Adding a word
 
@@ -64,7 +71,7 @@ notation Forth-2012 uses for it:
 ```
 
 `CODE` is `DEFCODE` without the entry, for a code-field routine that is not a
-word: `DOCOL` is defined with it.
+word: `DOCOL`, `DOCON` and `DOVAR` are defined with it.
 
 ### Names that need escaping
 
@@ -111,18 +118,20 @@ The entries are in `src/words/`, one file per kind of word, and
 |------|-------|
 | `stack.S` | the stack shuffles, the return stack transfers, `PICK` and `ROLL` |
 | `arithmetic.S` | the arithmetic, the mixed precision, the logic, the comparisons, and `udiv128` |
-| `memory.S` | `@ ! C@ C!` and the rest that address memory |
+| `memory.S` | `@ ! C@ C!` and the rest that address memory, and `HERE UNUSED ALLOT , C, ALIGN` with the two routines that move the allocation pointer |
 | `output.S` | everything that prints, and the pictured output routines |
 | `input.S` | `SOURCE >IN REFILL ACCEPT KEY` |
 | `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl` |
+| `compile.S` | `CREATE : ; IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VARIABLE`, and `header_impl` |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
 Include order is definition order, so a word may only compile a token from a
 file above its own. The fragments cannot be assembled on their own; the
 Makefile's glob is `src/*.S` and does not reach into `src/words/`.
 
-`DOCOL`, `EXIT`, `EXECUTE` and `(STOP)` stay in `src/interpreter.S`. They are the
-inner interpreter rather than words a program reaches for.
+`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)` and `(LIT)` stay in
+`src/interpreter.S`. They are the inner interpreter rather than words a program
+reaches for.
 
 Nothing else may go into `SECTION_RODATA` between `DICT_BEGIN` and `DICT_END`,
 and that now means inside any of the files in `src/words/`. The image is
@@ -151,7 +160,7 @@ the bottom of the stack, so the deepest item lives at `S0 - 16`, not `S0 - 8`.
 Every word is tested from Forth source, by `test/run-tests.sh` feeding the built
 binary and comparing what comes out. A new word needs a case in the file of
 `test/cases/` its kind names, and a line in `test/cases/guards.sh` if it reads a
-stack. See [testing.md](testing.md), which also lists six ways a case passes
+stack. See [testing.md](testing.md), which also lists seven ways a case passes
 while testing nothing.
 
 
@@ -167,14 +176,19 @@ while testing nothing.
   the whole of it: the image holds offsets, indices and name bytes, so there is
   nothing to fix up. The object file carries no relocations for it.
 
+What the dictionary grows afterwards is built by `header_impl`, which lays out
+the same fields the `HEADER` macro lays out here and writes the same kinds of
+value. See [compiling.md](compiling.md).
+
 ## Getting into the machine
 
 `aforth_enter` runs a token list and returns when a word runs `(STOP)`: 0 when
 the list reached its end, and the error number when something unwound it. The
 outer interpreter is what calls it. `machine_execute` runs one word by building
-`{xt, (STOP)}` in its own frame, and `machine_refill` runs `REFILL`; both are at
-the bottom of `src/interpreter.S`, because the tokens they name are symbols only
-the assembler building that file has. See
+`{xt, (STOP)}` in its own frame, `machine_refill` runs `REFILL`, and
+`dict_compile_literal` compiles `(LIT)` and a cell; all three are at the bottom
+of `src/interpreter.S`, because the tokens they name are symbols only the
+assembler building that file has. See
 [outer-interpreter.md](outer-interpreter.md).
 
 `(STOP)` is hidden, so name lookup will not find it. A programmer who compiled

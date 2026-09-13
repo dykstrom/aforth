@@ -19,10 +19,11 @@ those names mirror `src/words/`, so a new word's case has one obvious home.
 |------|----------------|
 | `stack.sh` | the stack shuffles, the return stack transfers, `PICK` and `ROLL` |
 | `arithmetic.sh` | the arithmetic, the mixed precision, the logic, the comparisons |
-| `memory.sh` | `@ ! C@ C!` and the rest that address memory |
+| `memory.sh` | `@ ! C@ C!` and the rest that address memory, and dictionary allocation |
 | `output.sh` | everything that prints, `BASE`, and the pictured output |
 | `input.sh` | `SOURCE >IN REFILL ACCEPT KEY` |
 | `parsing.sh` | the parsers, the search, and the number conversion |
+| `compile.sh` | `:` and `;`, the defining words, and what `STATE` makes the loop do |
 | `outer.sh` | the `QUIT` loop, its error messages, `ABORT`, `QUIT`, `BYE` |
 | `guards.sh` | the depth and room guard of every word that reads or fills a stack |
 
@@ -54,6 +55,12 @@ cases feed the line they will read.
 A word that writes needs somewhere to write. `BL WORD` copies the name it parses
 to `HERE` and returns that address, which is cell-aligned and which nothing
 reads again. That is the scratch the memory cases use.
+
+An address is never in an expected string, the region landing wherever the
+process put it. A case about the allocation pointer prints how far it moved —
+`HERE 16 ALLOT HERE SWAP - .` — and one about the dictionary's end asks for one
+byte more than `UNUSED` says is left, rather than for a number that depends on
+how big the built-in dictionary happens to be.
 
 ## The depth guards
 
@@ -111,7 +118,9 @@ names it. Each of these caught a case that was proving nothing:
   `STATE` and read it back, and it passed against a `STATE` that handed out
   `BASE`'s address: any writable cell gives back what was put in it. A case for
   a word that hands out an address has to pin the address down, which is why
-  that one also checks how far it lies from `BASE`'s.
+  that one still checks how far it lies from `BASE`'s. Writing through `STATE`
+  is no longer how its value is set in that case, the interpreter having started
+  to read the cell.
 - A NUL in what was printed. The shell drops NUL out of `$(...)`, so a line of
   `one` and a line of `one` followed by nine NULs compare equal. The `ACCEPT`
   case passed against an `ACCEPT` broken on purpose for that reason, the bytes

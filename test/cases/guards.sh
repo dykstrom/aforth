@@ -99,6 +99,9 @@ guards "ALIGNED" 'ALIGNED' 0
 guards "MOVE"    'MOVE'    2
 guards "FILL"    'FILL'    2
 guards "ERASE"   'ERASE'   1
+guards "ALLOT"   'ALLOT'   0
+guards ","       ','       0
+guards "C,"      'C,'      0
 
 guards "EMIT"    'EMIT'    0
 guards "TYPE"    'TYPE'    1
@@ -117,6 +120,9 @@ guards "COUNT"   'COUNT'   0
 guards "FIND"    'FIND'    0
 guards ">NUMBER" '>NUMBER' 3
 guards "?NUMBER" '?NUMBER' 1
+
+guards "LITERAL"  'LITERAL'  0
+guards "CONSTANT" 'CONSTANT' 0
 
 # The four token lists, each of which reaches its underflow before it has
 # written anything, which is what keeps this file silent.
@@ -203,6 +209,14 @@ room "FIND"       'DUP FIND'
 room "'"          "DUP ' DUP"
 room "?NUMBER"    'DUP ?NUMBER'
 room "STATE"      'DUP STATE'
+room "HERE"       'DUP HERE'
+room "UNUSED"     'DUP UNUSED'
+
+# The three code-field routines that push. None of them is a word, so each
+# room case defines the word that reaches it first, on the same full stack.
+room "DOCON"      '1 CONSTANT ONE DUP ONE'
+room "DOVAR"      'VARIABLE V DUP V'
+room "(LIT)"      ': P 1 ; DUP P'
 
 # The four that read the return stack check it before they check the data
 # stack, so each line puts something there first and fills the gap that left.

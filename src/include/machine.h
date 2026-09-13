@@ -329,6 +329,20 @@
 .Lholdroom_ok\@:
 .endm
 
+// Raise the error in x0, if it holds one, and carry on when it holds 0. This is
+// what a word does with the status a dictionary routine returns: dict_comma and
+// the rest report rather than raise, because machine_quit calls them too and
+// cannot be unwound. Shaped like the guards for the same reason they are, a
+// conditional branch on Mach-O being unable to name machine_error in another
+// file.
+//
+// Only for code running inside aforth_enter, as the guards are.
+.macro  RAISE
+        cbz     x0, .Lraise_ok\@
+        b       machine_error
+.Lraise_ok\@:
+.endm
+
 // Raise a divide by zero unless reg holds something else. Not a stack guard:
 // it stays in the build that compiles those out, because a zero divisor is a
 // real error and not a check on aforth's own bookkeeping. Shaped like the
@@ -341,14 +355,19 @@
 .endm
 
 // Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the next four are raised by the words that meet them — a divide
-// by zero, a pictured output overflow, an input line too long for the buffer,
-// and a name the dictionary does not hold.
+// first four; the seven after them are raised by the words that meet them — a
+// divide by zero, a pictured output overflow, an input line too long for the
+// buffer, a name the dictionary does not hold, a defining word with no name
+// left on the line, a name too long to count in one byte, and a dictionary
+// with no room left.
 //
 // The last two are not failures. ABORT and QUIT leave the machine the same way
 // an error does, because they must not return to the word that ran them, and
 // machine_quit tells them apart by the number: it prints nothing for either,
 // and empties the data stack for ABORT but not for QUIT.
+//
+// The numbers are runtime only. Nothing writes one to disk, so unlike a code
+// field's index they may be renumbered when an error is added in the middle.
 #define ERR_DS_UNDERFLOW        1
 #define ERR_DS_OVERFLOW         2
 #define ERR_RS_UNDERFLOW        3
@@ -357,7 +376,10 @@
 #define ERR_HOLD_OVERFLOW       6
 #define ERR_LINE_TOO_LONG       7
 #define ERR_UNDEFINED_WORD      8
-#define ERR_ABORT               9
-#define ERR_QUIT                10
+#define ERR_NO_NAME             9
+#define ERR_NAME_TOO_LONG       10
+#define ERR_DICT_FULL           11
+#define ERR_ABORT               12
+#define ERR_QUIT                13
 
 #endif // AFORTH_MACHINE_H

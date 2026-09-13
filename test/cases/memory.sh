@@ -29,9 +29,6 @@ prints "CHARS is the identity"    '3 CHARS .S'      '<1> 3  ok'
 prints "ALIGNED rounds up"        '101 ALIGNED .S'  '<1> 104  ok'
 prints "ALIGNED leaves an aligned address" '104 ALIGNED .S' '<1> 104  ok'
 
-# ALIGN moves the dictionary pointer, and no word hands that pointer out until
-# HERE arrives in ticket 010. What WORD returns is that pointer, so the second
-# WORD reports whether ALIGN moved an already aligned one.
 prints "ALIGN leaves the stack alone" '9 ALIGN .S'  '<1> 9  ok'
 prints "ALIGN moves an aligned pointer nowhere" \
   'BL WORD one ALIGN BL WORD two = .' '-1  ok'
@@ -52,3 +49,39 @@ prints "FILL writes the character" \
 prints "ERASE zeroes the bytes" \
   'BL WORD abcdefgh DUP CHAR+ 8 65 FILL DUP CHAR+ 8 ERASE DUP CHAR+ C@ . CHAR+ 7 + C@ .' \
   '0 0  ok'
+
+# Dictionary allocation. Every case measures how far HERE moved rather than
+# where it stands, because the region lands wherever the process put it.
+
+prints "HERE hands out one pointer" 'HERE HERE = .' '-1  ok'
+prints "ALLOT moves HERE up"        'HERE 16 ALLOT HERE SWAP - .' '16  ok'
+prints "ALLOT moves HERE back down" 'HERE 16 ALLOT -16 ALLOT HERE = .' '-1  ok'
+prints "UNUSED shrinks by what ALLOT took" 'UNUSED 64 ALLOT UNUSED - .' '64  ok'
+
+# The value is read back as well as the distance: a , that moved the pointer
+# and stored nothing would still pass the second half on its own.
+prints ", stores a cell and steps one cell" \
+  'HERE 42 , DUP @ . HERE SWAP - .' '42 8  ok'
+prints "C, stores a byte and steps one byte" \
+  'HERE 65 C, DUP C@ . HERE SWAP - .' '65 1  ok'
+prints "ALIGN rounds HERE up after C," 'HERE 65 C, ALIGN HERE SWAP - .' '8  ok'
+
+# The bound. UNUSED says exactly how far HERE may still move, so each of these
+# asks for one more than there is rather than for a number that depends on how
+# big the built-in dictionary happens to be.
+raises "ALLOT reports a dictionary with no room" 'UNUSED 1 + ALLOT' \
+  'aforth: dictionary full'
+raises "ALLOT will not go below the dictionary" 'HERE NEGATE ALLOT' \
+  'aforth: dictionary full'
+raises ", reports a full dictionary" 'UNUSED ALLOT
+1 ,' 'aforth: dictionary full'
+raises "C, reports a full dictionary" 'UNUSED ALLOT
+65 C,' 'aforth: dictionary full'
+
+# A word that reported the error moved nothing, so HERE is where it was. The
+# middle line raises and so prints nothing; the third one runs because an error
+# ends its own line and no more.
+prints ", leaves HERE alone when it reports" 'UNUSED ALLOT
+1 ,
+UNUSED .' ' ok
+0  ok'

@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Johan Dykström
 
-// The memory words.
+// The memory words and dictionary allocation.
 //
 // A character is a byte, so CHARS is nothing at all and CHAR+ adds one. MOVE,
 // FILL and ERASE hand the work to libc, which is what the portability goal
 // asks for and gives us its tuned copies for free. libc keeps x19 to x28, so
 // the machine survives the call, and a word has no use for x30.
+//
+// HERE, ALLOT, , and C, grow the dictionary, and dict_set_here and dict_comma
+// below them are the only two routines that write the allocation pointer.
+// src/words/compile.S builds headers on top of them. See
+// docs/system/compiling.md.
 //
 // Included by src/interpreter.S between DICT_BEGIN and DICT_END. Not a
 // translation unit of its own: the entry macros track their place in the image
@@ -66,14 +71,111 @@
         NEED    1
         NEXT
 
-// ALIGN rounds the dictionary pointer up to a cell. The word that reads that
-// pointer, HERE, and the words that move it arrive with ticket 010; the pointer
-// itself is already in the user area.
+// Dictionary allocation.
+//
+// HERE is a cell in the user area and every word below moves it. The two
+// routines are the only things that write it, so the bound is tested in one
+// place: the pointer must stay between the dictionary base and UV_DICT_END,
+// and a move that would leave that range writes nothing and reports
+// ERR_DICT_FULL.
+//
+// They report rather than raise, because the outer interpreter calls
+// dict_comma too, to compile a token, and it runs outside aforth_enter where a
+// raise would unwind to a frame that is already gone. A word turns the report
+// into a raise with the RAISE macro.
+
+// Move HERE to x0. Returns 0, or ERR_DICT_FULL with HERE left where it was.
+// The comparison is unsigned, so a pointer that ran past either end of the
+// dictionary — or wrapped, which a wild ALLOT does — fails it.
+        .p2align        2
+        .globl  dict_set_here
+dict_set_here:
+        ldr     x1, [UP, #UV_DICT_END]
+        cmp     x0, x1
+        b.hi    1f
+        cmp     x0, DBASE
+        b.lo    1f
+        str     x0, [UP, #UV_HERE]
+        mov     x0, #0
+        ret
+1:      mov     x0, #ERR_DICT_FULL
+        ret
+
+// Store the cell in x0 at HERE and move HERE one cell up. Returns 0, or
+// ERR_DICT_FULL having written nothing.
+//
+// This is , and it is also how the outer interpreter compiles a token and how
+// dict_compile_literal compiles a literal.
+        .p2align        2
+        .globl  dict_comma
+dict_comma:
+        ldr     x1, [UP, #UV_HERE]
+        add     x2, x1, #8
+        ldr     x3, [UP, #UV_DICT_END]
+        cmp     x2, x3
+        b.hi    1f
+        str     x0, [x1]
+        str     x2, [UP, #UV_HERE]
+        mov     x0, #0
+        ret
+1:      mov     x0, #ERR_DICT_FULL
+        ret
+
+        DEFCODE "HERE", 4, here         // ( -- addr )
+        ROOM    1
+        ldr     x0, [UP, #UV_HERE]
+        DPUSH   x0
+        NEXT
+
+// UNUSED is how far HERE may still move up, which is the one way a program can
+// see the bound the two routines above test against.
+        DEFCODE "UNUSED", 6, unused     // ( -- u )
+        ROOM    1
+        ldr     x0, [UP, #UV_DICT_END]
+        ldr     x1, [UP, #UV_HERE]
+        sub     x0, x0, x1
+        DPUSH   x0
+        NEXT
+
+// ALLOT reserves n bytes when n is positive and releases |n| when it is
+// negative, which is the one word that moves HERE back down.
+        DEFCODE "ALLOT", 5, allot       // ( n -- )
+        NEED    1
+        ldr     x0, [UP, #UV_HERE]
+        add     x0, x0, TOS
+        bl      dict_set_here
+        RAISE
+        DPOPM
+        NEXT
+
+        DEFCODE ",", 1, comma           // ( x -- )
+        NEED    1
+        mov     x0, TOS
+        bl      dict_comma
+        RAISE
+        DPOPM
+        NEXT
+
+// C, stores one byte, so it leaves HERE unaligned. Forth-2012 asks the program
+// to say ALIGN before it stores a cell again.
+        DEFCODE "C,", 2, c_comma        // ( char -- )
+        NEED    1
+        ldr     x27, [UP, #UV_HERE]     // kept across the call, as x27 may be
+        add     x0, x27, #1
+        bl      dict_set_here
+        RAISE
+        strb    TOSW, [x27]
+        DPOPM
+        NEXT
+
+// ALIGN rounds the dictionary pointer up to a cell, which is what a program
+// says after C, before it stores a cell again.
         DEFCODE "ALIGN", 5, align       // ( -- )
         ldr     x0, [UP, #UV_HERE]
         add     x0, x0, #7
         and     x0, x0, #-8
-        str     x0, [UP, #UV_HERE]
+        bl      dict_set_here
+        RAISE
         NEXT
 
         DEFCODE "ALIGNED", 7, aligned   // ( addr -- a-addr )

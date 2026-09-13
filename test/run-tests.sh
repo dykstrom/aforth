@@ -94,6 +94,7 @@ guards() {
 . "$HERE/cases/output.sh"
 . "$HERE/cases/input.sh"
 . "$HERE/cases/parsing.sh"
+. "$HERE/cases/compile.sh"
 . "$HERE/cases/outer.sh"
 
 # The guards have nothing to fire in the build that compiles them out, which is

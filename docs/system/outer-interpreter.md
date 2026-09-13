@@ -14,6 +14,11 @@ of it, and does one of three things with the name:
 - it converts in `BASE`, so the cell is pushed;
 - neither, so it is an error.
 
+`STATE` decides the first two. While it says compiling, a word's token is
+compiled instead of run — unless its entry is marked `F_IMMEDIATE`, which is how
+`;` and `[` get their chance to end the definition — and a number is compiled as
+a literal instead of pushed. See [compiling.md](compiling.md).
+
 When the line is used up, aforth prints ` ok` and a newline and reads the next
 one. That is where the older Forths put it, and it is why `readline` is given an
 empty prompt: nothing is printed in front of what the user types. An empty line
@@ -26,8 +31,9 @@ cuts the name, `dict_find` searches, `number_impl` converts. `?NUMBER` is
 about what a number is.
 
 `STATE` is a user variable and the word pushes the address of the cell.
-`machine_quit` zeroes it before every line. Nothing writes it until ticket 010
-puts the loop's compiling half in.
+`machine_quit` zeroes it when it restarts — at start-up, and after `QUIT`,
+`ABORT` or a reported error — and not when it refills, so a definition may be
+typed on as many lines as the programmer likes and an error abandons it.
 
 ## Into the machine and back
 
@@ -83,8 +89,11 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 | `ERR_HOLD_OVERFLOW` | `aforth: pictured output overflow` |
 | `ERR_LINE_TOO_LONG` | `aforth: input line too long` |
 | `ERR_UNDEFINED_WORD` | `aforth: undefined word: ` and the name |
+| `ERR_NO_NAME` | `aforth: name expected` |
+| `ERR_NAME_TOO_LONG` | `aforth: name too long` |
+| `ERR_DICT_FULL` | `aforth: dictionary full` |
 
-Only the last names anything. `undefined_word` in `src/machine.S` takes the name
+Only `ERR_UNDEFINED_WORD` names anything. `undefined_word` in `src/machine.S` takes the name
 in x0 and x1 and puts it in `UV_ERR_ADDR` and `UV_ERR_LEN` before raising, so
 the interpreter and `'` print the same message. The name points into the input
 buffer and the message is written before anything refills it. `'` at the end of
@@ -106,6 +115,11 @@ that runs outside `aforth_enter` has the same problem.
 That check stays in the build without the stack guards. It runs once per number
 typed rather than once per word executed, so it is not what ticket 012 prices.
 
+The dictionary routines have the same problem and answer it the other way:
+`dict_comma` and `dict_set_here` report `ERR_DICT_FULL` rather than raising it,
+so that the loop can compile a token and branch to its own reporting while a
+word turns the report into a raise with the `RAISE` macro.
+
 ## What the tests cover
 
 `test/cases/outer.sh` holds the loop's own behaviour: `ok` per line, `BASE` read
@@ -113,6 +127,9 @@ for every name rather than once a line, each message, that an error ends its
 line and the next line still runs, what `ABORT` and `QUIT` each empty, and the
 exit status after `BYE` and after end of input. `STATE`, `ABORT`, `QUIT` and
 `BYE` are checked there as words as well.
+
+What the loop does while `STATE` says compiling is in `test/cases/compile.sh`
+instead, beside the words that set it.
 
 What `ABORT` and `QUIT` empty on the return stack is in `test/cases/guards.sh`
 instead, because `RNEED` is the only thing that can see it. The build without

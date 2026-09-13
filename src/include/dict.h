@@ -41,8 +41,8 @@
 #define ENT_COUNT       9
 #define ENT_NAME        10
 
-#define F_IMMEDIATE     0x01    // runs even while compiling; 010
-#define F_HIDDEN        0x02    // name lookup walks past it; 007
+#define F_IMMEDIATE     0x01    // runs even while compiling
+#define F_HIDDEN        0x02    // name lookup walks past it
 
 // Every code-field routine, in index order.
 //
@@ -74,7 +74,11 @@
         less_num, num, num_s, hold, sign, num_greater, dot_s, \
         source, to_in, refill, accept, key, \
         parse_name, parse, word, count, find, tick, to_number, q_number, \
-        state, abort, quit, bye
+        state, abort, quit, bye, \
+        lit, docon, dovar, \
+        here, unused, allot, comma, c_comma, \
+        create, colon, semicolon, immediate, \
+        left_bracket, right_bracket, literal, bracket_char, constant
 
         .set    aforth_prim_count, 0
         .irp    prim, AFORTH_PRIM_LIST
@@ -197,8 +201,8 @@ cf_\label:
 .endif
 .endm
 
-// A code-field routine with no name of its own: DOCOL, and the other DO...
-// routines a defining word will point an entry at. Not a word, so it gets no
+// A code-field routine with no name of its own: DOCOL, and DOCON and DOVAR,
+// which CONSTANT and CREATE point an entry at. Not a word, so it gets no
 // entry; only an index and a body.
 .macro  CODE label
         .text

@@ -44,6 +44,22 @@
         RPOP    IP
         NEXT
 
+// DOCON: push the cell in the parameter field. The code field of a word made
+// by CONSTANT, and not a word itself, so it has no entry either.
+        CODE    docon                   // ( -- x )
+        ROOM    1
+        ldr     x0, [W, #8]
+        DPUSH   x0
+        NEXT
+
+// DOVAR: push the address of the parameter field. The code field of a word
+// made by CREATE, and so of one made by VARIABLE, which is CREATE and a cell.
+        CODE    dovar                   // ( -- a-addr )
+        ROOM    1
+        add     x0, W, #8
+        DPUSH   x0
+        NEXT
+
 // EXECUTE: run the word whose token is on the data stack.
 //
 // A token is an offset, so it needs DBASE added before it names anything. That
@@ -65,12 +81,24 @@
         mov     x0, #0                  // the machine ran to the end
         b       enter_return
 
+// (LIT): push the cell that follows this token in the list, and step over it.
+//
+// What LITERAL compiles, and what the outer interpreter compiles for a number
+// typed while compiling. Hidden, so name lookup will not find it: run on its
+// own it would push whatever token came next and then skip that word.
+        DEFCODE "(LIT)", 5, lit, F_HIDDEN       // ( -- x )
+        ROOM    1
+        ldr     x0, [IP], #8
+        DPUSH   x0
+        NEXT
+
 #include "words/stack.S"
 #include "words/arithmetic.S"
 #include "words/memory.S"
 #include "words/output.S"
 #include "words/input.S"
 #include "words/parsing.S"
+#include "words/compile.S"
 #include "words/quit.S"
 
         DICT_END
@@ -185,6 +213,31 @@ machine_execute:
         ldp     x29, x30, [sp], #32
         ret
         FUNC_SIZE(machine_execute)
+
+// Compile the cell in x0 as a literal: (LIT)'s token, then the cell itself.
+//
+// Returns 0, or ERR_DICT_FULL when the dictionary had no room, in which case
+// the token may already be there and the cell is not. A half-written literal
+// does not matter: the error unwinds to machine_quit, which abandons the
+// definition being compiled along with the rest of the line.
+//
+// Here rather than in src/outer.S because TOK_lit is a symbol only the
+// assembler building this file has, which is why machine_execute is here too.
+        .p2align        2
+        .globl  dict_compile_literal
+        FUNC_TYPE(dict_compile_literal)
+dict_compile_literal:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     x0, [sp, #16]           // the value, across the first call
+        mov     x0, #TOK_lit
+        bl      dict_comma
+        cbnz    x0, 1f
+        ldr     x0, [sp, #16]
+        bl      dict_comma
+1:      ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(dict_compile_literal)
 
 // Run REFILL, for the same reason: TOK_refill is a symbol of this file's.
 // The flag it leaves is on the data stack, where the caller reads it.

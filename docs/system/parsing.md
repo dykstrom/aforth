@@ -1,7 +1,7 @@
 # Parsing and name lookup
 
 How a line becomes names, how a name becomes an execution token, and how one
-that is not a word becomes a number. The words are in `src/interpreter.S`,
+that is not a word becomes a number. The words are in `src/words/parsing.S`,
 beside the two routines they share: `dict_find` and `digit_value`.
 
 ## Cutting a name out of the line
@@ -17,21 +17,23 @@ the name it lands in, so a name typed with a tab in it is not found.
 `PARSE` skips nothing and takes its delimiter from the stack, which is what a
 comment or a string literal needs. `WORD` skips leading delimiters and copies
 what it parses to `HERE` as a counted string, the transient region Forth-2012
-allows it — the next `WORD`, or the next thing that allocates, overwrites it. A
+allows it — the next `WORD`, or the next thing that allocates, overwrites it, and
+`,` and `:` both do. A
 name longer than 255 bytes cannot be counted in one byte, so the copy stops at
 255 while the parse runs on to the delimiter, leaving `>IN` where it belongs.
 
 `COUNT` turns a counted string into the address and length every other word
-takes. `CHAR` is `PARSE-NAME DROP C@`. `[CHAR]`, which compiles rather than
-pushes, waits for ticket 010 and the literals it would have nothing to compile
-without.
+takes. `CHAR` is `PARSE-NAME DROP C@`, and `[CHAR]`, which compiles that byte
+rather than pushing it, is in `src/words/compile.S` with the other words that
+compile; see [compiling.md](compiling.md).
 
 ## The search
 
 `dict_find` walks the chain from `LATEST`. Every link is an offset from `DBASE`
 and 0 ends the chain, so the walk holds in a process that loaded the image at a
 different address. An entry whose flags carry `F_HIDDEN` is stepped over rather
-than matched, which is why `(STOP)` cannot be found by name.
+than matched, which is why `(STOP)` and `(LIT)` cannot be found by name and why
+a definition cannot find itself between `:` and `;`.
 
 Folding is ASCII `A`-`Z` against `a`-`z` and nothing else. A byte of 0x80 and
 above is compared as it stands, per ADR 0004, so a name in another script
