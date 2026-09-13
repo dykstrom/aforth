@@ -24,8 +24,11 @@ one. That is where the older Forths put it, and it is why `readline` is given an
 empty prompt: nothing is printed in front of what the user types. An empty line
 prints ` ok` like any other.
 
-The loop is assembly because a token list cannot branch until ticket 011. It
-runs the same parts the words do rather than parts of its own: `parse_name_impl`
+The loop is assembly because it is what enters the machine and reads what
+unwound it. A definition can branch now, but a `QUIT` written in Forth would
+still need `CATCH` and `THROW` to tell an error from a word that finished, and
+aforth has neither. It runs the same parts the words do rather than parts of its
+own: `parse_name_impl`
 cuts the name, `dict_find` searches, `number_impl` converts. `?NUMBER` is
 `number_impl` and nothing else, so the word and the interpreter cannot disagree
 about what a number is.
@@ -92,6 +95,7 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 | `ERR_NO_NAME` | `aforth: name expected` |
 | `ERR_NAME_TOO_LONG` | `aforth: name too long` |
 | `ERR_DICT_FULL` | `aforth: dictionary full` |
+| `ERR_CONTROL_FLOW` | `aforth: unstructured control flow` |
 
 Only `ERR_UNDEFINED_WORD` names anything. `undefined_word` in `src/machine.S` takes the name
 in x0 and x1 and puts it in `UV_ERR_ADDR` and `UV_ERR_LEN` before raising, so

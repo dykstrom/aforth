@@ -48,8 +48,8 @@ word. `DOCON` and `DOVAR` are the other two code fields, for a word made by
 
 `F_IMMEDIATE` and `F_HIDDEN` are both read by then. The outer interpreter runs
 an immediate word rather than compiling it, and `dict_find` walks past a hidden
-one — which is what `(STOP)` and `(LIT)` are, and what a definition is between
-`:` and `;`.
+one — which is what `(STOP)`, `(LIT)`, `(BRANCH)` and `(0BRANCH)` are, and what
+a definition is between `:` and `;`.
 
 ## Adding a word
 
@@ -123,15 +123,18 @@ The entries are in `src/words/`, one file per kind of word, and
 | `input.S` | `SOURCE >IN REFILL ACCEPT KEY` |
 | `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl` |
 | `compile.S` | `CREATE : ; IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VARIABLE`, and `header_impl` |
+| `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE`, and the routines that write a branch distance |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
 Include order is definition order, so a word may only compile a token from a
 file above its own. The fragments cannot be assembled on their own; the
 Makefile's glob is `src/*.S` and does not reach into `src/words/`.
 
-`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)` and `(LIT)` stay in
-`src/interpreter.S`. They are the inner interpreter rather than words a program
-reaches for.
+`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)`, `(LIT)`, `(BRANCH)` and
+`(0BRANCH)` stay in `src/interpreter.S`. They are the inner interpreter rather
+than words a program reaches for. The last three are hidden for the same
+reason: each reads a cell out of the list it is running, so a programmer who
+typed one would push or jump by whatever token came next.
 
 Nothing else may go into `SECTION_RODATA` between `DICT_BEGIN` and `DICT_END`,
 and that now means inside any of the files in `src/words/`. The image is
@@ -160,7 +163,7 @@ the bottom of the stack, so the deepest item lives at `S0 - 16`, not `S0 - 8`.
 Every word is tested from Forth source, by `test/run-tests.sh` feeding the built
 binary and comparing what comes out. A new word needs a case in the file of
 `test/cases/` its kind names, and a line in `test/cases/guards.sh` if it reads a
-stack. See [testing.md](testing.md), which also lists seven ways a case passes
+stack. See [testing.md](testing.md), which also lists eight ways a case passes
 while testing nothing.
 
 

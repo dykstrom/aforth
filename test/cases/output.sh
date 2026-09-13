@@ -63,3 +63,42 @@ prints ".S prints the items deepest first" '1 2 3 .S' '<3> 1 2 3  ok'
 prints ".S prints a negative item" '-1 .S'           '<1> -1  ok'
 prints ".S leaves the stack alone" '1 2 .S .S'       '<2> 1 2 <2> 1 2  ok'
 prints ".S follows BASE"           '255 HEX .S DECIMAL' '<1> FF  ok'
+
+# WORDS prints the whole dictionary, which grows with every ticket, so these
+# cases ask whether one name is in the list rather than comparing the list.
+# The list is split to one name per line, with the interpreter's ok dropped.
+words_has() {
+  if out "$1" | sed '$d' | tr ' ' '\n' | grep -qxF "$2"; then
+    echo yes
+  else
+    echo no
+  fi
+}
+
+check "WORDS lists a built-in word" "yes" "$(words_has 'WORDS' 'DUP')"
+check "WORDS lists a word just defined" "yes" "$(words_has ': ZZFOO ;
+WORDS' 'ZZFOO')"
+
+# The chain runs newest first, so a word defined on the line before heads it.
+check "WORDS lists the newest word first" "ZZFOO" \
+  "$(out ': ZZFOO ;
+WORDS' | sed -n 2p | cut -d' ' -f1)"
+
+# The two an F_HIDDEN entry covers: a word that may never be typed, and a
+# definition that has not reached its ; yet.
+check "WORDS leaves out a hidden word" "no" "$(words_has 'WORDS' '(LIT)')"
+#
+# WORDS has to run while the definition is still open, and a word that is not
+# immediate would be compiled into it instead. [ and ] are what let it run: on
+# the next line it would be compiled, and the case would pass against a WORDS
+# that listed everything.
+check "WORDS leaves out an unfinished definition" "no" \
+  "$(words_has ': ZZFOO [ WORDS ]' 'ZZFOO')"
+
+# The width is fixed, aforth never asking the terminal how wide it is. Both
+# cases name the lines that broke the rule rather than reporting a count, so a
+# failure says which one.
+check "WORDS wraps at 64 columns" "" \
+  "$(out 'WORDS' | sed '$d' | awk 'length > 64 { printf "%s ", FNR }')"
+check "WORDS leaves no line ending in a space" "" \
+  "$(out 'WORDS' | sed '$d' | awk '/ $/ { printf "%s ", FNR }')"

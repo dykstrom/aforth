@@ -72,13 +72,16 @@
         move, fill, erase, \
         emit, type, cr, spaces, bl, base, decimal, hex, \
         less_num, num, num_s, hold, sign, num_greater, dot_s, \
+        words, \
         source, to_in, refill, accept, key, \
         parse_name, parse, word, count, find, tick, to_number, q_number, \
         state, abort, quit, bye, \
         lit, docon, dovar, \
         here, unused, allot, comma, c_comma, \
         create, colon, semicolon, immediate, \
-        left_bracket, right_bracket, literal, bracket_char, constant
+        left_bracket, right_bracket, literal, bracket_char, constant, \
+        branch, zero_branch, \
+        if, else, then, begin, until, while, repeat, again, recurse
 
         .set    aforth_prim_count, 0
         .irp    prim, AFORTH_PRIM_LIST

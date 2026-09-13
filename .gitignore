@@ -1,5 +1,8 @@
-# Build artifacts
-build/
+# Build artifacts. build*/ rather than build/ because the same working tree is
+# built on both platforms: a container sharing the tree over a mount needs its
+# own directory, or its ELF objects land where the macOS build expects Mach-O.
+# See docs/system/ci.md.
+build*/
 *.o
 *.out
 *.lst

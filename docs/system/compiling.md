@@ -121,9 +121,10 @@ use again. Forth-2012 leaves this to the system, and reclaiming it would mean
 
 ## What is not here
 
-`CREATE DOES>` and `POSTPONE` were cut from the epic. `[']`, `RECURSE` and the
-string literals are not implemented. Control flow inside a definition is ticket
-011, and until it lands a definition is a straight line of tokens.
+`CREATE DOES>` and `POSTPONE` were cut from the epic. `[']` and the string
+literals are not implemented. Control flow inside a definition is in
+[control-flow.md](control-flow.md), and `RECURSE` is there too, because what it
+works around is the hiding `:` and `;` do.
 
 ## Where the tests are
 

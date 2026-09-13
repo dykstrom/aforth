@@ -355,11 +355,12 @@
 .endm
 
 // Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the seven after them are raised by the words that meet them — a
+// first four; the eight after them are raised by the words that meet them — a
 // divide by zero, a pictured output overflow, an input line too long for the
 // buffer, a name the dictionary does not hold, a defining word with no name
-// left on the line, a name too long to count in one byte, and a dictionary
-// with no room left.
+// left on the line, a name too long to count in one byte, a dictionary with no
+// room left, and a control-flow word given something that is not a place in
+// the dictionary.
 //
 // The last two are not failures. ABORT and QUIT leave the machine the same way
 // an error does, because they must not return to the word that ran them, and
@@ -379,7 +380,8 @@
 #define ERR_NO_NAME             9
 #define ERR_NAME_TOO_LONG       10
 #define ERR_DICT_FULL           11
-#define ERR_ABORT               12
-#define ERR_QUIT                13
+#define ERR_CONTROL_FLOW        12
+#define ERR_ABORT               13
+#define ERR_QUIT                14
 
 #endif // AFORTH_MACHINE_H

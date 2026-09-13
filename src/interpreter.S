@@ -14,9 +14,11 @@
 // pulled in below with #include rather than assembled separately. Include order
 // is definition order: a file may only use tokens from a file above it.
 //
-// DOCOL, EXIT, EXECUTE and (STOP) stay here. They are the inner interpreter
-// rather than words a program reaches for, and (STOP) belongs beside the
-// aforth_enter it returns out of.
+// DOCOL, EXIT, EXECUTE, (STOP), (LIT), (BRANCH) and (0BRANCH) stay here. They
+// are the inner interpreter rather than words a program reaches for, and
+// (STOP) belongs beside the aforth_enter it returns out of. The last three are
+// hidden: each reads a cell out of the list it is running, so a programmer who
+// typed one would push or jump by whatever token came next.
 //
 // machine_execute and machine_refill at the bottom are what the outer
 // interpreter in src/outer.S calls to get into the machine. They live here
@@ -92,6 +94,29 @@
         DPUSH   x0
         NEXT
 
+// (BRANCH): jump by the distance that follows this token in the list.
+//
+// The distance is a count of cells, not an address, so a definition holding
+// one is still valid wherever the dictionary lands (ADR 0005). It is counted
+// from the token after the distance itself, so 0 means carry straight on and a
+// negative number jumps back.
+//
+// Hidden, as (LIT) is. The words that compile it are in src/words/control.S.
+        DEFCODE "(BRANCH)", 8, branch, F_HIDDEN         // ( -- )
+        ldr     x0, [IP], #8
+        add     IP, IP, x0, lsl #3
+        NEXT
+
+// (0BRANCH): the same jump, but only when the flag on the stack is false.
+        DEFCODE "(0BRANCH)", 9, zero_branch, F_HIDDEN   // ( x -- )
+        NEED    1
+        mov     x1, TOS
+        DPOPM
+        ldr     x0, [IP], #8
+        cbnz    x1, 1f
+        add     IP, IP, x0, lsl #3
+1:      NEXT
+
 #include "words/stack.S"
 #include "words/arithmetic.S"
 #include "words/memory.S"
@@ -99,6 +124,7 @@
 #include "words/input.S"
 #include "words/parsing.S"
 #include "words/compile.S"
+#include "words/control.S"
 #include "words/quit.S"
 
         DICT_END

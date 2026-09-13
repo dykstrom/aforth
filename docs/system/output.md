@@ -71,19 +71,34 @@ being able to compile a literal zero yet.
 nothing extra; a number already wider than the field is printed in full,
 because `SPACES` does nothing with a count of zero or less.
 
-`.S` is assembly, because it loops and there is no control flow until ticket
-011, but it holds its digits through the same routine `#S` does, so it follows
+`.S` is assembly, because it loops and the loop reads more easily than the
+token list that could express it now, but it holds its digits through the same routine `#S` does, so it follows
 `BASE` too. It prints the depth in angle brackets and then the items deepest
 first, each followed by a space — `<3> 1 2 3 ` — the form gforth and SwiftForth
 use. An item is printed as `.` prints it, sign and all, and an empty stack
 prints `<0> `. It reads the items rather than popping them, so it leaves the
 stack exactly as it found it.
 
+`WORDS` prints the name of every word in the dictionary, newest first. It walks
+the chain `dict_find` walks and skips a hidden entry for the same reason, so the
+list holds exactly the names a user can type: `(STOP)`, `(LIT)`, `(BRANCH)` and
+`(0BRANCH)` are not in it, and neither is a definition that has not reached its
+`;` yet.
+
+Names are wrapped at 64 columns, a fixed number rather than the terminal's own
+width: asking the terminal would mean an `ioctl`, and aforth calls libc for what
+it needs (ADR 0007 covers the writing itself). The space goes in front of each
+name rather than after it, so no line ends in one and none runs past the width.
+
+`.S` and `WORDS` are both from the Programming-Tools word set rather than Core.
+
 ## Where the tests are
 
 `test/cases/output.sh`, which feeds the binary Forth source and compares the
 bytes that come out: what each word prints, what a number looks like in each
-`BASE`, and what `.S` shows. See [testing.md](testing.md).
+`BASE`, and what `.S` shows. The `WORDS` cases are the exception — the
+dictionary grows with every ticket, so they ask whether one name is in the list
+rather than comparing the list. See [testing.md](testing.md).
 
 Errors do not come this way. They go to file descriptor 2 through
 `write_stderr`, and what each one says is in

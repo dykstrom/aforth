@@ -294,6 +294,69 @@ hold_write:
 2:      add     sp, sp, #16
         NEXT
 
+// How wide a line of WORDS may grow before the next name starts a new one.
+// aforth does not ask the terminal how wide it is, so this is a fixed number
+// that fits the narrowest window anyone still uses.
+#define WORDS_WIDTH 64
+
+// WORDS prints the name of every word in the dictionary, newest first.
+//
+// A Programming-Tools word, as .S is, and assembly for the same reason .S is:
+// it walks a chain, and a token list could do that now but would be longer to
+// read than the loop.
+//
+// The chain and the skipping are dict_find's: every link is an offset from
+// DBASE, 0 ends it, and an entry marked F_HIDDEN is stepped over. So the list
+// holds exactly the names a user can type, which leaves out (STOP), (LIT),
+// (BRANCH), (0BRANCH) and a definition that has not reached its ; yet.
+//
+// x27 holds the entry being printed and x28 how far along the line we are.
+// Both survive a call, which is what they are for; the entry's address and its
+// name length are worked out again after each one.
+        DEFCODE "WORDS", 5, words       // ( -- )
+        ldr     x27, [UP, #UV_LATEST]
+        mov     x28, #0                 // characters on this line so far
+1:      cbz     x27, 6f
+        add     x3, DBASE, x27
+        ldrb    w4, [x3, #ENT_FLAGS]
+        tst     w4, #F_HIDDEN
+        b.ne    5f
+        ldrb    w4, [x3, #ENT_COUNT]
+
+        // The first name on a line starts it. Every later one takes a space in
+        // front, and starts the next line instead when it would not fit. The
+        // space goes before the name rather than after it so that no line ends
+        // in one and none runs past the width.
+        cbz     x28, 4f
+        add     x5, x28, x4
+        add     x5, x5, #1
+        cmp     x5, #WORDS_WIDTH
+        b.hi    2f
+        mov     w0, #32
+        bl      put_byte
+        add     x28, x28, #1
+        b       3f
+2:      mov     w0, #10
+        bl      put_byte
+        mov     x28, #0
+3:      add     x3, DBASE, x27          // put_byte clobbered both of these
+        ldrb    w4, [x3, #ENT_COUNT]
+
+4:      add     x28, x28, x4
+        add     x0, x3, #ENT_NAME
+        mov     x1, x4
+        bl      write_stdout
+
+5:      add     x3, DBASE, x27
+        ldr     x27, [x3, #ENT_LINK]
+        b       1b
+
+        // End the last line, unless nothing was printed on it.
+6:      cbz     x28, 7f
+        mov     w0, #10
+        bl      put_byte
+7:      NEXT
+
 // The printing words, as token lists over the pictured output words above.
 //
 // This is what the standard's own definitions look like, and it is the reason

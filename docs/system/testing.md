@@ -8,8 +8,16 @@ How aforth is tested. The suite is `test/run-tests.sh`, the cases are in
 Every case pipes Forth source into the built binary and compares what comes
 out. A case is its name, that source, and what the source should print. Each
 case gets its own run of the binary, because the binary reads until end of
-input. A run costs about two milliseconds, so the whole suite takes a second and
-a half and a case per word costs nothing.
+input. A run costs about four milliseconds, so the whole suite takes three
+seconds and a case per word costs nothing.
+
+Every run goes through `perl -e 'alarm shift; exec @ARGV'`, which kills a binary
+that has not finished in ten seconds. A definition can branch, so a word can
+loop forever, and one that does would hang the whole suite instead of failing
+its own case. An alarm survives `exec`, so this costs one extra process per case
+and leaves nothing running afterwards; perl is on both platforms, and `timeout`
+is on neither by default on macOS. A case that is killed fails on what it did
+not print, and an `exits` case sees 142.
 
 `test/run-tests.sh` holds the helpers, the order the case files run in, and the
 coverage check. It sources one file per kind of word from `test/cases/`, and
@@ -20,10 +28,11 @@ those names mirror `src/words/`, so a new word's case has one obvious home.
 | `stack.sh` | the stack shuffles, the return stack transfers, `PICK` and `ROLL` |
 | `arithmetic.sh` | the arithmetic, the mixed precision, the logic, the comparisons |
 | `memory.sh` | `@ ! C@ C!` and the rest that address memory, and dictionary allocation |
-| `output.sh` | everything that prints, `BASE`, and the pictured output |
+| `output.sh` | everything that prints, `BASE`, the pictured output, and `WORDS` |
 | `input.sh` | `SOURCE >IN REFILL ACCEPT KEY` |
 | `parsing.sh` | the parsers, the search, and the number conversion |
 | `compile.sh` | `:` and `;`, the defining words, and what `STATE` makes the loop do |
+| `control.sh` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN`, `EXIT` and `RECURSE` |
 | `outer.sh` | the `QUIT` loop, its error messages, `ABORT`, `QUIT`, `BYE` |
 | `guards.sh` | the depth and room guard of every word that reads or fills a stack |
 
@@ -100,7 +109,7 @@ mentions. A hidden word is skipped: `(STOP)` cannot be reached by name.
 It is a search for the name, not proof that the case tests the word. A case
 still has to be written so that it fails when the word is broken.
 
-## Seven ways a case passes while testing nothing
+## Eight ways a case passes while testing nothing
 
 Break the word on purpose before trusting a new case, and check that the case
 names it. Each of these caught a case that was proving nothing:
@@ -130,6 +139,12 @@ names it. Each of these caught a case that was proving nothing:
 - An address in the expected string. The region lands wherever the process put
   it, so a case prints a difference or a flag instead: `STATE BASE - .`, or
   `BL WORD DUP FIND . ' DUP = .`.
+- A word the interpreter compiled instead of running. The case for `WORDS`
+  leaving out an unfinished definition wrote `WORDS` on the line after a `:`
+  that had no `;` yet. `STATE` still said compiling, so the interpreter put
+  `WORDS` into the definition and never ran it. The case passed against a
+  `WORDS` that listed hidden entries. A case that needs a word to run while a
+  definition is open brackets it — `[ WORDS ]` — because `[` is immediate.
 - A message more than one guard can produce. Every `ROOM` case first passed
   against words whose `ROOM` had been left out, because a word that pushes one
   cell too many is caught by `REFILL` at the start of the next line, which says

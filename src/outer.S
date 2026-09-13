@@ -15,9 +15,12 @@
 // literal. A word marked immediate runs whichever way STATE reads, which is how
 // ; and [ get a chance to end the definition. See docs/system/compiling.md.
 //
-// The loop is assembly because a token list cannot branch until ticket 011.
-// The words it reaches into the machine for are in src/interpreter.S:
-// parse_name_impl, dict_find, number_impl, machine_refill and machine_execute.
+// The loop is assembly because it is what enters the machine and reads what
+// unwound it. A definition can branch now, but a QUIT written in Forth would
+// still need CATCH and THROW to tell an error from a word that finished, and
+// aforth has neither. The words it reaches into the machine for are in
+// src/interpreter.S: parse_name_impl, dict_find, number_impl, machine_refill
+// and machine_execute.
 //
 // dict.h rather than machine.h, for F_IMMEDIATE: the loop reads an entry's
 // flags to decide whether a word runs while the loop is compiling. It defines
@@ -63,6 +66,8 @@ msg_name_too_long:
         .asciz  "aforth: name too long"
 msg_dict_full:
         .asciz  "aforth: dictionary full"
+msg_control_flow:
+        .asciz  "aforth: unstructured control flow"
 
         .text
 
@@ -213,7 +218,7 @@ quit_report:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
 
-        cmp     x0, #ERR_DICT_FULL
+        cmp     x0, #ERR_CONTROL_FLOW
         b.hi    qr_done
 
         cmp     x0, #ERR_DS_OVERFLOW
@@ -236,6 +241,8 @@ quit_report:
         b.eq    qr_name_too_long
         cmp     x0, #ERR_DICT_FULL
         b.eq    qr_dict_full
+        cmp     x0, #ERR_CONTROL_FLOW
+        b.eq    qr_control_flow
         adr_sym x0, msg_ds_underflow
         b       qr_write
 qr_ds_overflow:
@@ -264,6 +271,9 @@ qr_name_too_long:
         b       qr_write
 qr_dict_full:
         adr_sym x0, msg_dict_full
+        b       qr_write
+qr_control_flow:
+        adr_sym x0, msg_control_flow
         b       qr_write
 
 // The one error that names a word. The name is in the user area, put there by

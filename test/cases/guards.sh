@@ -124,6 +124,20 @@ guards "?NUMBER" '?NUMBER' 1
 guards "LITERAL"  'LITERAL'  0
 guards "CONSTANT" 'CONSTANT' 0
 
+# The control-flow words read the data stack because the control-flow stack is
+# the data stack. Each checks its depth before it looks at what is there.
+guards "THEN"    'THEN'    0
+guards "ELSE"    'ELSE'    0
+guards "UNTIL"   'UNTIL'   0
+guards "AGAIN"   'AGAIN'   0
+guards "WHILE"   'WHILE'   0
+guards "REPEAT"  'REPEAT'  1
+
+# (0BRANCH) is hidden, so it has to be reached through a word that compiles it
+# rather than by name.
+raises "(0BRANCH) guards its depth" ': T IF THEN ;
+T' 'aforth: data stack underflow'
+
 # The four token lists, each of which reaches its underflow before it has
 # written anything, which is what keeps this file silent.
 guards "."       '.'       0
@@ -211,6 +225,12 @@ room "?NUMBER"    'DUP ?NUMBER'
 room "STATE"      'DUP STATE'
 room "HERE"       'DUP HERE'
 room "UNUSED"     'DUP UNUSED'
+room "IF"         'DUP IF'
+room "BEGIN"      'DUP BEGIN'
+
+# BEGIN takes the last cell here, in place of the DUP the other lines use:
+# WHILE needs something below it as well as room above it.
+room "WHILE"      'BEGIN WHILE'
 
 # The three code-field routines that push. None of them is a word, so each
 # room case defines the word that reaches it first, on the same full stack.

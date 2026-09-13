@@ -33,15 +33,38 @@ check() {
   fi
 }
 
+# Every case runs the binary through this rather than calling it directly.
+#
+# A definition can branch, so a word can loop forever, and one that does would
+# hang the whole suite instead of failing its own case. perl's alarm kills the
+# run after CASE_TIMEOUT seconds: the timer survives exec, so this costs one
+# extra process per case and leaves no wrapper running afterwards. perl is on
+# both platforms, and timeout is on neither by default on macOS.
+#
+# A case that is killed fails on what it did not print, and an exits case sees
+# 142, which is what a shell reports for a process killed by SIGALRM.
+CASE_TIMEOUT=10
+
+if command -v perl >/dev/null 2>&1; then
+  aforth() {
+    perl -e 'alarm shift; exec @ARGV' "$CASE_TIMEOUT" "$BIN"
+  }
+else
+  echo "warn - no perl, so a word that loops forever will hang the suite"
+  aforth() {
+    "$BIN"
+  }
+fi
+
 # Run the source in $1 and print what reaches stdout, the banner dropped.
 # Errors go to file descriptor 2, so they are not in what this returns.
 out() {
-  printf '%s\n' "$1" | "$BIN" 2>/dev/null | sed 1d
+  printf '%s\n' "$1" | aforth 2>/dev/null | sed 1d
 }
 
 # The same, but what reaches file descriptor 2.
 err() {
-  printf '%s\n' "$1" | "$BIN" 2>&1 >/dev/null
+  printf '%s\n' "$1" | aforth 2>&1 >/dev/null
 }
 
 # The four helpers a case is written with. Each takes the case's name first,
@@ -65,7 +88,7 @@ raises() {
 
 exits() {
   status=0
-  printf '%s\n' "$2" | "$BIN" >/dev/null 2>&1 || status=$?
+  printf '%s\n' "$2" | aforth >/dev/null 2>&1 || status=$?
   check "$1" "$3" "$status"
 }
 
@@ -95,6 +118,7 @@ guards() {
 . "$HERE/cases/input.sh"
 . "$HERE/cases/parsing.sh"
 . "$HERE/cases/compile.sh"
+. "$HERE/cases/control.sh"
 . "$HERE/cases/outer.sh"
 
 # The guards have nothing to fire in the build that compiles them out, which is
