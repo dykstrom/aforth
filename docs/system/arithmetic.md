@@ -34,9 +34,41 @@ this.
 so a case reading `0 1 3 UM/MOD` is the double 2^64 divided by 3.
 
 ARM64 divides 64 bits by 64, not 128, so `UM/MOD` and its signed neighbours go
-through `udiv128` in `src/interpreter.S`: one `udiv` when the high cell is
-empty, and otherwise shift-and-subtract, sixty-four times. Ticket 012 may want
-that faster.
+through `udiv128` in `src/words/arithmetic.S`: one `udiv` when the high cell is
+empty, and otherwise Knuth's algorithm D on 32-bit digits, which is two more
+`udiv`s and at most two corrections apiece.
+
+The divisor is normalised so that its top digit has its high bit set. That is
+what bounds a trial digit to one digit and a correction to two steps, and it is
+why the remainder comes out needing a shift back.
+
+aforth does not call the compiler's own 128-bit division. `__udivti3` is
+compiler-rt rather than libc, so it is a different library on each platform.
+It also computes a full 128-bit quotient, where aforth needs only one that fits
+a cell. Timed against each other in C, the runtime call costs about 9.9 ns and
+this algorithm about 8.6.
+
+It replaced a loop that shifted and subtracted sixty-four times. On a `*/` whose
+product overflows a cell, called in a loop, that took the call from 42.4 ns to
+11.6 ns; the digit-at-a-time path adds about 1.5 ns where the old one added
+about 31. The same loop with operands whose product fits a cell is unchanged at
+about 10 ns, because it never leaves the single `udiv` in front. Measured with
+`test/bench/run-bench.sh` on two builds of this loop, five passes each:
+
+```forth
+: BENCH ( n -- x )
+  0 SWAP
+  BEGIN
+    >R  1000000000000 1000000000000 999999999999 */  +
+    R> 1- DUP 0=
+  UNTIL DROP ;
+```
+
+A quotient too big for a cell is an ambiguous condition, which reaches `udiv128`
+as a high cell no smaller than the divisor. What comes out is whatever the
+algorithm makes of it, as it was before, and it still comes out: every
+correction adds the divisor's top digit to the running remainder, and two of
+those carry it past the point that ends the loop.
 
 ## Flags are all bits, shifts are not masked
 

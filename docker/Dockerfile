@@ -7,8 +7,12 @@ FROM debian:stable-slim
 
 # libedit-dev is the line-editing library aforth links (ADR 0001). macOS has it
 # as a system library; on Debian it is a package.
+#
+# perl is for test/bench/timeit.pl, which times a run with Time::HiRes. The
+# test suite needs only alarm and exec, which Debian's perl-base has, but
+# Time::HiRes is not in perl-base and make bench cannot run without it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends clang make libedit-dev \
+    && apt-get install -y --no-install-recommends clang make libedit-dev perl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /aforth

@@ -17,6 +17,15 @@
 msg_mmap:
         .asciz  "aforth: mmap"
 
+// A run of spaces for write_spaces to write from.
+//
+// It lives here rather than in src/words/output.S because that file is
+// included between DICT_BEGIN and DICT_END, where anything in SECTION_RODATA
+// would be copied into the dictionary as if it were an entry.
+        .p2align        3
+spaces_run:
+        .space  SPACES_RUN, 32
+
 // readline's prompt. Nothing is printed in front of a line: aforth says " ok"
 // after a line instead, which is where the older Forths put it.
 str_empty:
@@ -233,6 +242,38 @@ puts_stdout:
         mov     x1, #1
         bl      write_stdout
         ldp     x29, x30, [sp], #32
+        ret
+
+// Write x0 spaces to file descriptor 1, and nothing at all when x0 is zero or
+// less.
+//
+// A run per call rather than a byte per call, which is what SPACES needs: .R
+// pads a number to its field width through it, and one write costs about 341 ns
+// on macOS against 0.45 ns for a word dispatched. The bytes come from a
+// constant run rather than a buffer, so aforth still holds no output of its own
+// and ADR 0007 still stands. See docs/system/benchmark.md.
+//
+// The count crosses the write on the stack rather than in a register, as
+// write_stderr's pointer does, so this clobbers nothing a caller might be
+// keeping in x27 or x28.
+        .p2align        2
+        .globl  write_spaces
+write_spaces:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     x0, [sp, #16]           // the count crosses the call here
+1:      ldr     x2, [sp, #16]
+        cmp     x2, #0
+        b.le    2f
+        mov     x1, #SPACES_RUN
+        cmp     x2, x1
+        csel    x1, x2, x1, lt          // the last run is the short one
+        sub     x2, x2, x1
+        str     x2, [sp, #16]
+        adr_sym x0, spaces_run
+        bl      write_stdout
+        b       1b
+2:      ldp     x29, x30, [sp], #32
         ret
 
 // Read one line into the caller's buffer.

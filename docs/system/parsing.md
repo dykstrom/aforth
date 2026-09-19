@@ -22,6 +22,27 @@ allows it — the next `WORD`, or the next thing that allocates, overwrites it, 
 name longer than 255 bytes cannot be counted in one byte, so the copy stops at
 255 while the parse runs on to the delimiter, leaving `>IN` where it belongs.
 
+## The comment words
+
+`(` and `\` are both immediate, so a comment reads the same way inside a
+definition as outside one. Neither parses into a string: each moves `>IN` and
+leaves nothing behind.
+
+`(` ends at the first `)` on the line, and at the end of the line when there is
+none. It does not nest, so `( a ( b )` is one comment and what follows the `)`
+is code again. Forth-2012 lets an implementation read another line looking for
+the `)`, and aforth does not: the only place it could read one from is the
+terminal, where waiting for a `)` the user does not know it wants is a trap.
+
+`\` gives the rest of the line to the comment. It is Forth-2012 Core
+Extensions rather than Core, so a program that has to run on a system without
+it cannot use it.
+
+Both are written in `src/words/parsing.S`. `\` is the one word whose name the
+source escapes: `DEFCODE "\\"` is two characters in the file and one byte in
+the dictionary, and `test/run-tests.sh` unescapes it before it checks that every
+word has a case.
+
 `COUNT` turns a counted string into the address and length every other word
 takes. `CHAR` is `PARSE-NAME DROP C@`, and `[CHAR]`, which compiles that byte
 rather than pushing it, is in `src/words/compile.S` with the other words that

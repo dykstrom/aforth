@@ -19,11 +19,22 @@ is the same reason errors go to fd 2 through `write_stderr`. `main` prints the
 banner with `puts_stdout` rather than `puts` so that a buffered banner cannot
 overtake an unbuffered number.
 
-The cost is a `write` per character out of `EMIT`, `CR` and `SPACES`. `SPACES`
-writes one space at a time rather than a run of them, because the only buffer
-it could build a run in is the pictured output buffer, and `.R` calls `SPACES`
-while holding the string `#>` just handed it. Ticket 012 is the place to price
-all of this.
+The cost is a `write` per character out of `EMIT` and `CR`, which have one byte
+to write and no way around it. That cost is measured: one `EMIT` is about
+341 ns on macOS and 132 ns on Linux, writing to `/dev/null`, against 0.45 ns for
+a word dispatched. A character printed costs what several hundred ordinary words
+cost, so it is by a wide margin the most expensive thing aforth does per unit of
+work. See [benchmark.md](benchmark.md).
+
+`SPACES` is the one word that had a way around it and now takes it. It writes up
+to `SPACES_RUN` spaces per call through `write_spaces` in `src/machine.S`, which
+writes them out of a constant run of bytes rather than out of a buffer. aforth
+still holds no output of its own, so ADR 0007 still stands: the bytes leave
+immediately, in order, one call instead of n.
+
+`.R` and `U.R` pad through `SPACES`, which is where it shows. Padding `42` to a
+field of twenty went from 6185 ns to 680 ns on macOS, a factor of nine, because
+the eighteen spaces went from eighteen `write` calls to one.
 
 ## Numbers are built in the hold buffer
 

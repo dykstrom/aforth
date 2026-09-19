@@ -159,6 +159,23 @@ current, so the binary under test is the one from the patch before: a break that
 is caught looks uncaught, and one round's failure turns up in the next round's
 output.
 
+## A routine with a mathematical contract gets a second check
+
+The suite drives every word from Forth source, which reaches a routine only
+through the operands a case can write. `udiv128` is the case in point. Its
+corrections run on values that a case reaches only by luck, and that nobody
+picks well by hand.
+
+So check a routine like that outside the binary as well. Copy it into a file of
+its own and assemble it with a C driver. Compare it against
+`unsigned __int128` over millions of random inputs and every edge value.
+Extract the routine from the source rather than retyping it, so the test cannot
+drift from what ships. Ticket 013 ran 25 million cases that way before its new
+`udiv128` was believed, and the suite passed both before and after.
+
+Nothing in the repository holds that driver. It is twenty lines, written when a
+routine needs it and thrown away afterwards.
+
 ## Linux
 
 `make docker-test` builds the Linux/ARM64 image in `docker/` and runs `make

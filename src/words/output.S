@@ -156,19 +156,15 @@ hold_write:
         bl      put_byte
         NEXT
 
-// SPACES writes one space at a time rather than a run of them, because the
-// buffer a run would be built in is the pictured output buffer, and .R calls
-// SPACES while holding the string #> just handed it.
+// SPACES writes a run of spaces per call to write rather than one space per
+// call. The run it writes from is a constant in src/machine.S, not a buffer:
+// the only buffer aforth has is the pictured output one, and .R calls SPACES
+// while holding the string #> just handed it.
         DEFCODE "SPACES", 6, spaces     // ( n -- )
         NEED    1
-        DPOP    x27                     // the count, kept across the writes
-1:      cmp     x27, #0
-        b.le    2f
-        mov     w0, #32
-        bl      put_byte
-        sub     x27, x27, #1
-        b       1b
-2:      NEXT
+        DPOP    x0
+        bl      write_spaces
+        NEXT
 
 // BL is a constant, and there is no CONSTANT until ticket 010, so it is shaped
 // like TRUE and FALSE above.

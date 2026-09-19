@@ -232,6 +232,34 @@ parse_name_impl:
         DPUSH   x6
         NEXT
 
+// The two comment words. Both are immediate, so a comment reads the same way
+// inside a definition as outside one, and both move >IN rather than parsing
+// into a string nobody wants.
+//
+// ( ends at the first ) on the line, and at the end of the line when there is
+// none. Forth-2012 lets an implementation read another line looking for the ),
+// and aforth does not: the only place it could read one from is the terminal,
+// where waiting for a ) the user does not know it wants is a trap.
+        DEFCODE "(", 1, paren, F_IMMEDIATE      // ( "ccc<paren>" -- )
+        ldr     x0, [UP, #UV_TIB]
+        ldr     x1, [UP, #UV_TIB_LEN]
+        ldr     x2, [UP, #UV_TO_IN]
+1:      cmp     x2, x1
+        b.hs    2f
+        ldrb    w3, [x0, x2]
+        add     x2, x2, #1              // past the byte either way
+        cmp     w3, #41                 // ')'
+        b.ne    1b
+2:      str     x2, [UP, #UV_TO_IN]
+        NEXT
+
+// \ gives the rest of the line to the comment, which is the whole of
+// SOURCE NIP >IN ! in two instructions. Core Extensions rather than Core.
+        DEFCODE "\\", 1, backslash, F_IMMEDIATE // ( "ccc<eol>" -- )
+        ldr     x0, [UP, #UV_TIB_LEN]
+        str     x0, [UP, #UV_TO_IN]
+        NEXT
+
 // WORD skips leading delimiters and copies what it parses to HERE as a counted
 // string, which is the transient region Forth-2012 allows it. The next WORD
 // overwrites it, and so does the next thing that allocates.

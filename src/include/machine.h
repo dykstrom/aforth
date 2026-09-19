@@ -98,6 +98,10 @@
 #define PAD_SIZE        0x001000
 #define REGION_SIZE     0x128000
 
+// How many spaces write_spaces writes per call to write. Wider than any field
+// a program is likely to ask .R for, so padding a number costs one write.
+#define SPACES_RUN      64
+
 // How many routines the table holds, which is the ceiling on the number of
 // primitives. One 16 KiB page is 2048 of them, far more than a Forth needs.
 #define XTAB_MAX        (XTAB_SIZE / 8)
@@ -248,8 +252,15 @@
 // machine.S, so the direct form only assembles inside that one file. The
 // instruction count on the path a word actually takes is the same either way.
 //
-// Ticket 012 builds with -DAFORTH_NO_STACK_CHECKS to price these. Whether
-// hoisting S0 into x27 pays back the load is for that ticket to measure.
+// Ticket 012 priced these, and docs/system/benchmark.md holds the numbers. The
+// guards are two-fifths of every instruction aforth executes and 8% of its
+// time, 17% on a loop of PICK and ROLL, which pay NEED and then NEEDX. The load
+// at the top of each one is worth about twice what the subtract, compare and
+// branch behind it are worth, but not more than that: hoisting S0 into x27
+// buys 3.5% and hoisting UV_DS_LO into x28 as well buys 6%, against the 13%
+// that compiling the guards out buys. Each costs a register a word may keep a
+// value in across a call, so acting on it would supersede part of ADR 0006 and
+// has not been done.
 #ifndef AFORTH_NO_STACK_CHECKS
 
 .macro  NEED n

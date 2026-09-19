@@ -81,7 +81,8 @@
         create, colon, semicolon, immediate, \
         left_bracket, right_bracket, literal, bracket_char, constant, \
         branch, zero_branch, \
-        if, else, then, begin, until, while, repeat, again, recurse
+        if, else, then, begin, until, while, repeat, again, recurse, \
+        paren, backslash
 
         .set    aforth_prim_count, 0
         .irp    prim, AFORTH_PRIM_LIST
@@ -100,8 +101,10 @@
 //
 // NEXT is a macro rather than one shared routine on purpose: every primitive
 // carries its own copy, so the indirect branch gets a branch-predictor entry
-// per word instead of one entry for the whole system. ADR 0005 expects that to
-// matter more than the extra indexed load the index code field costs.
+// per word instead of one entry for the whole system. ADR 0005 expected that to
+// matter more than the extra indexed load the index code field costs, and
+// ticket 012 measured both: one shared copy is 48% slower, and the extra load
+// costs nothing a benchmark can find. See docs/system/benchmark.md.
 //
 // Both clobber x9 and W, the same x9 the stack guards use. A primitive must be
 // finished with both before its NEXT.

@@ -33,10 +33,13 @@ BEGIN UNTIL WHILE REPEAT AGAIN` and `RECURSE`. There is no counted loop.
 | `src/words/` | The built-in words, one file per kind: `stack.S`, `arithmetic.S`, `memory.S`, `output.S`, `input.S`, `parsing.S`, `compile.S`, `control.S` and `quit.S`. These are `#include`d by `interpreter.S`, not assembled on their own: every entry has to be in one assembler pass. Include order is definition order. See `docs/system/inner-interpreter.md` for which file a new word goes in. |
 | `src/include/` | Headers included by the sources. `platform.h` holds every macOS/Linux difference; `machine.h` holds the register convention, the region layout and the stack macros; `dict.h` holds the dictionary format and the macros that define a word. |
 | `test/` | `run-tests.sh` holds the helpers and the run order; the cases are in `test/cases/`, one file per kind of word, mirroring `src/words/`. Every case pipes Forth source into the built binary and compares its output, its error output or its exit status. See `docs/system/testing.md`. |
+| `test/bench/` | The benchmarks and the harness that times them. `mix.f` is a loop of stack and arithmetic words and `pick.f` one of `PICK` and `ROLL`; both are standard Forth that runs in arm64th and SwiftForth as well, so the three can be compared. `run-bench.sh` times a list of systems and `timeit.pl` is the stopwatch. Not part of `make test`. See `docs/system/benchmark.md`. |
 | `docker/` | `Dockerfile` for the Linux/ARM64 build and test environment. |
 | `.github/workflows/` | CI. `macos.yml` and `linux.yml` each run `make` then `make test` on their platform. |
 | `build/` | Build output. Generated, git-ignored. |
 | `docs/` | Durable project context. Sub-folder layout below shows where each kind of doc goes. |
+
+## Durable context
 
 ```
 docs/
@@ -51,18 +54,18 @@ docs/
 `docs/adr/`. Read it before writing implementation code: several rules forbid the
 obvious approach. The dictionary may hold no absolute code addresses and aforth
 generates no code at runtime (ADR 0005), text is UTF-8 bytes with no wide-character
-representation (ADR 0004), and configuration is Forth source with no parser (ADR 0003).
-Eight registers belong to the Forth machine, and x16, x17 and x18 may not be used at
-all (ADR 0006). Before adding a Forth word, read
-`docs/system/inner-interpreter.md`: the entry format and the five rules the
-defining macros impose are there. `docs/system/arithmetic.md` records the
-choices Forth-2012 leaves open, such as which way division rounds,
-`docs/system/output.md` the one path every printed byte takes and how a number
-is formatted, `docs/system/input.md` how a line arrives and what `KEY` does to
-the terminal, `docs/system/parsing.md` how a name is cut out and looked up,
-`docs/system/outer-interpreter.md` the `QUIT` loop and the one path every error
-takes, `docs/system/compiling.md` how the dictionary grows and what `:` and `;`
-build, `docs/system/control-flow.md` how a definition branches, and
+representation (ADR 0004), and configuration is Forth source with no parser (ADR
+0003). Eight registers belong to the Forth machine, and x16, x17 and x18 may not be
+used at all (ADR 0006). Before adding a Forth word, read
+`docs/system/inner-interpreter.md`: the entry format and the five rules the defining
+macros impose are there. `docs/system/arithmetic.md` records the choices Forth-2012
+leaves open, such as which way division rounds, `docs/system/output.md` the one path
+every printed byte takes and how a number is formatted, `docs/system/input.md` how a
+line arrives and what `KEY` does to the terminal, `docs/system/parsing.md` how a name
+is cut out and looked up, `docs/system/outer-interpreter.md` the `QUIT` loop and the
+one path every error takes, `docs/system/compiling.md` how the dictionary grows and
+what `:` and `;` build, `docs/system/control-flow.md` how a definition branches,
+`docs/system/benchmark.md` what dispatch costs and how that was measured, and
 `docs/system/assembler.md` the toolchain's own traps.
 
 ## Commands
@@ -72,6 +75,8 @@ build, `docs/system/control-flow.md` how a definition branches, and
 | Build | `make` |
 | Run | `make run` |
 | Tests | `make test` (builds first, then runs `test/run-tests.sh`) |
+| Benchmark | `make bench`. `BENCH_FILE` picks `mix` or `pick`; `BENCH_ITERS`, `BENCH_REPS` and `BENCH_POINTS` trade time for precision. To compare systems, call the harness directly: `test/bench/run-bench.sh aforth=./build/aforth arm64th sf` |
+| Linux/ARM64 benchmark | `make docker-bench`. On an Apple silicon host this is a virtual machine, so it prices Linux rather than the silicon |
 | Linux/ARM64 build and test | `make docker-test` (needs a running Docker daemon) |
 | Build without the stack guards | `make EXTRA_ASFLAGS=-DAFORTH_NO_STACK_CHECKS`. A variable set on the `make` command line replaces `ASFLAGS` instead of adding to it, which is why the Makefile reads a separate `EXTRA_ASFLAGS`. |
 | Test without the stack guards | `make EXTRA_ASFLAGS=-DAFORTH_NO_STACK_CHECKS test`, on one command line. `make` hands the flags to the suite in `AFORTH_ASFLAGS`, which is how the suite knows to skip the cases that expect a guard to fire; running `make test` afterwards on its own reports the flag as absent and the skipped cases fail. |

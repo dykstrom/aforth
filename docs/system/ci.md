@@ -13,8 +13,15 @@ without a commit.
 
 macOS needs no install step: clang and make ship with the runner's Xcode command
 line tools, and libedit is a system library there. Linux installs `clang`,
-`make` and `libedit-dev` with apt. `docker/Dockerfile` installs the same three
-and covers the Linux build locally, from a macOS machine.
+`make` and `libedit-dev` with apt. `docker/Dockerfile` installs those three and
+`perl`, and covers the Linux build locally, from a macOS machine.
+
+`perl` is in the image for the benchmark harness.
+`test/bench/timeit.pl` times a run with `Time::HiRes`, and Debian's slim image
+carries only `perl-base`, which does not include it. The test suite needs no
+package, because it uses only `alarm` and `exec`. So `make test` passes in a
+slim image and `make bench` stops with `Can't locate Time/HiRes.pm`. Neither CI
+workflow runs the benchmark, so neither installs `perl`.
 
 `libedit-dev` is the package to install, not `libedit`. Ubuntu and Debian ship
 `libedit.so.2` in the base image, which is enough to run a binary and not enough

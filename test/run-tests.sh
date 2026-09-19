@@ -145,6 +145,10 @@ esac
 # A case file is split on white space and each token stripped of one quote at
 # either end, so that the word in '1 7 DUP .S' is found as DUP and the word in
 # "' fnord" as ' .
+#
+# A name the source escapes is unescaped first. \\ is written as two characters
+# in DEFCODE and is one character in the dictionary, and a case that uses it
+# writes the one.
 case_tokens=$(cat "$HERE"/cases/*.sh |
   tr '\t' ' ' | tr ' ' '\n' |
   sed -e p -e "s/^[\"']//" -e "s/[\"']\$//" |
@@ -154,7 +158,7 @@ uncovered=$(
   grep -hE '^[[:space:]]+DEF(CODE|WORD)' "$HERE"/../src/words/*.S \
       "$HERE"/../src/interpreter.S |
     grep -v F_HIDDEN |
-    sed -e 's/^[^"]*"//' -e 's/".*$//' |
+    sed -e 's/^[^"]*"//' -e 's/".*$//' -e 's/\\\\/\\/g' |
     sort -u |
     while read -r word; do
       printf '%s\n' "$case_tokens" | grep -qxF -- "$word" ||

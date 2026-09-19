@@ -26,6 +26,27 @@ prints "PARSE cuts to the delimiter" 'CHAR ) PARSE this is a comment) TYPE' \
   'this is a comment ok'
 prints "PARSE skips no leading delimiter" 'CHAR ) PARSE ) TYPE 65 EMIT' 'A ok'
 
+# The two comment words. Both are immediate, so each is written twice: once at
+# the prompt and once inside a definition, where a word that was not immediate
+# would be compiled instead of run.
+prints "( ends at the closing paren" '1 ( ignored ) 2 + .' '3  ok'
+prints "( does not nest"             '1 ( a ( b ) 2 + .'   '3  ok'
+prints "( is immediate"              ': T ( n -- n ) 41 1+ ; T .' '42  ok'
+
+# With no ) on the line, ( takes what is left of it and the next line still
+# parses. The sum is printed there, because a line already used up can print
+# nothing.
+prints "( takes the rest of the line when there is no )" '1 ( no closing paren
+2 + .' ' ok
+3  ok'
+
+prints "\\ takes the rest of the line" '1 \ 2 3 4
+.' ' ok
+1  ok'
+prints "\\ is immediate" ': T 41 \ the answer, nearly
+1+ ; T .' ' ok
+42  ok'
+
 # WORD copies what it parses to HERE as a counted string, so two calls report
 # the same address and the second overwrites the first.
 prints "WORD copies a counted string" 'BL WORD hello COUNT TYPE' 'hello ok'

@@ -9,7 +9,10 @@ A Forth system written in ARM64 assembly, targeting Forth-2012.
 
 Early development. aforth reads Forth at a prompt and runs it until `BYE` or
 end of input. The stack, arithmetic, logic, memory, output, input and parsing
-words are in place. There is no way to define a word yet.
+words are in place. A user can define words with `:` and `;`, `CREATE`,
+`CONSTANT` and `VARIABLE`, and branch inside them with `IF ELSE THEN` and
+`BEGIN UNTIL WHILE REPEAT AGAIN`. There is no counted loop and no file access;
+file access and the init files it needs are next.
 
 ## Platforms
 
@@ -22,6 +25,7 @@ Requires make, clang and libedit (a system library on macOS; `libedit-dev` on Li
     make        # build build/aforth
     make run    # build and run
     make test   # build and run the test suite
+    make bench  # build and time the inner interpreter
 
 ## License
 

@@ -344,16 +344,24 @@
 // x0 and the quotient in x1, and leaves x2 and x6 to x8 alone, because the
 // signed words keep the signs they have to put back in those.
 //
-// ARM64 divides 64 bits by 64, so a wider dividend is shift and subtract, one
-// bit at a time. The quotient shifts in at the bottom of the low half as the
-// dividend shifts out of the top of it, which is why one register serves as
-// both. A quotient too big for a cell is an ambiguous condition in
-// Forth-2012, and what comes out here is whatever the loop makes of it.
+// ARM64 divides 64 bits by 64 and not 128, so a wider dividend is divided a
+// digit at a time in base 2^32: Knuth's algorithm D for a two-digit divisor,
+// which is two udivs and two corrections rather than sixty-four shifts. The
+// divisor is normalised first so that its top digit has its high bit set,
+// which is what bounds each trial quotient to one digit and each correction
+// to at most two steps.
 //
-// Ticket 013 replaces the loop: udiv on 32-bit halves would do the same work in
-// a handful of instructions. It is measured at about 35 ns, which is the
-// largest single cost in aforth so far, though a single-cell number printed
-// arrives here with an empty high half and takes the fast path above instead.
+// A quotient too big for a cell is an ambiguous condition in Forth-2012. It
+// arrives here as a high half no smaller than the divisor, and what comes out
+// is whatever the algorithm makes of it; it still terminates, because every
+// correction adds the top digit of a normalised divisor to rhat and two of
+// those carry it past 2^32.
+//
+// The digit-at-a-time path adds about 1.5 ns to the loop it sits in, where the
+// bit-at-a-time one added about 31. See docs/system/arithmetic.md. A
+// single-cell number printed through pictured numeric output arrives with an
+// empty high half and takes the one divide above instead, so it never reaches
+// any of this.
         .p2align        2
 udiv128:
         cbnz    x0, 1f
@@ -362,17 +370,61 @@ udiv128:
         mov     x1, x3
         ret
 
-1:      mov     x4, #64
-2:      lsr     x3, x0, #63             // the bit about to leave the dividend
-        lsl     x0, x0, #1
-        orr     x0, x0, x1, lsr #63
-        lsl     x1, x1, #1
-        cmp     x0, x2
-        cset    x5, hs
-        orr     x5, x5, x3              // that bit means 2^64, so subtract
-        cbz     x5, 3f
-        sub     x0, x0, x2
-        orr     x1, x1, #1              // and record a quotient bit
-3:      subs    x4, x4, #1
-        b.ne    2b
+        // Normalise the divisor, and shift the dividend by as much.
+        //
+        // The low half is shifted right by 64 - s to reach the top of un32,
+        // and a shift of 64 is not a shift ARM64 does, so it goes right by one
+        // and then by 63 - s. That is 0 when s is 0, which is the answer that
+        // case wants, and it costs no branch.
+1:      clz     x4, x2                  // s
+        lsl     x3, x2, x4              // the normalised divisor
+        lsr     x5, x3, #32             // its high digit, at least 2^31
+        mov     w9, w3                  // its low digit
+        lsl     x10, x0, x4
+        mvn     w11, w4                 // 63 - s, in the low six bits
+        lsr     x12, x1, #1
+        lsr     x12, x12, x11
+        orr     x10, x10, x12           // the top two digits of the dividend
+        lsl     x13, x1, x4
+        lsr     x14, x13, #32           // the third digit
+        mov     w15, w13                // and the fourth
+
+        // The high digit of the quotient. rhat is the remainder that goes with
+        // the trial digit, and both are corrected together. The test needs
+        // rhat * 2^32 + the next digit, and rhat is less than 2^32, so the two
+        // are joined rather than multiplied and added.
+        udiv    x11, x10, x5
+        msub    x12, x11, x5, x10       // rhat
+2:      lsr     x0, x11, #32
+        cbnz    x0, 3f                  // a trial digit of two digits is too big
+        mul     x0, x11, x9
+        orr     x1, x14, x12, lsl #32
+        cmp     x0, x1
+        b.ls    4f                      // it fits; no correction
+3:      sub     x11, x11, #1
+        add     x12, x12, x5
+        lsr     x0, x12, #32
+        cbz     x0, 2b                  // rhat still fits a digit, so test again
+
+        // Take the first digit off, and repeat for the second.
+4:      orr     x10, x14, x10, lsl #32
+        msub    x10, x11, x3, x10
+        udiv    x14, x10, x5
+        msub    x12, x14, x5, x10
+5:      lsr     x0, x14, #32
+        cbnz    x0, 6f
+        mul     x0, x14, x9
+        orr     x1, x15, x12, lsl #32
+        cmp     x0, x1
+        b.ls    7f
+6:      sub     x14, x14, #1
+        add     x12, x12, x5
+        lsr     x0, x12, #32
+        cbz     x0, 5b
+
+        // The remainder comes out shifted by as much as the divisor was.
+7:      orr     x10, x15, x10, lsl #32
+        msub    x10, x14, x3, x10
+        lsr     x0, x10, x4
+        add     x1, x14, x11, lsl #32
         ret

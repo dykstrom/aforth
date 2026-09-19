@@ -36,7 +36,9 @@ branch to. `DISPATCH` is that same tail, for a word that already has a code
 field in `W`. Both clobber `x9` and `W`.
 
 `NEXT` is a macro, so every primitive ends with its own copy and each gets its
-own branch-predictor entry. `EXECUTE` is `NEXT` reading its token from the
+own branch-predictor entry. That is worth 48%: a build with one shared `NEXT`
+executes two fewer instructions per word and is half again as slow. See
+[benchmark.md](benchmark.md). `EXECUTE` is `NEXT` reading its token from the
 stack instead of the list.
 
 `DOCOL` is the code field of every colon definition: it pushes `IP` on the
@@ -90,6 +92,13 @@ string.
 The declared length is the length of the name, not of the string that spells
 it, so `."` is 2 and `\` is 1. A wrong count is a build error rather than a
 corrupt entry, so this is a thing to get wrong once.
+
+The coverage check in `test/run-tests.sh` reads these names out of the sources,
+and it undoes only one escape: a doubled backslash. It cuts a name that escapes
+a double quote short at the escape, and then reports that word as uncovered
+however its case is written. The backslash works today because its escape is
+the one the check knows. Fix the extraction when the first word with a quote in
+its name lands.
 
 Five rules govern them.
 

@@ -158,6 +158,31 @@ Two more caveats. The per-word figures subtract an estimated `DUP DUP` cost take
 instructions on every word that reads a stack, so every figure here carries them; ticket 012 prices
 those separately.
 
+## Settled, 2026-09-14
+
+Ticket 012 built the fixup variant this note describes — walk the link chain at
+start-up, write each code field as a real address, drop the `XTAB` load from
+`NEXT` — and measured it. **The extra load costs nothing a benchmark can find.**
+
+Sixteen passes over a 23-word loop of stack and arithmetic words put the fixup
+build within half a per cent of the shipped one, with the spread straddling it
+evenly. The expectation in *What the extra indirection costs* above — "single-
+digit percent with inlined `NEXT`, much worse without it" — is confirmed at the
+bottom of its range, and its second half is confirmed too: a variant with one
+shared `NEXT` instead of a copy per primitive is 48% slower, which is what the
+load would have cost had there been no hoisting to hide it.
+
+The numbers, the method, what each variant changed, and the rest of ticket 012 —
+the stack guards, the cached top, `S0` in x27, Linux, and two other Forths as
+bearings — are in [system/benchmark.md](../system/benchmark.md), which is the
+authoritative record. The measurements in *First measurements* above stand, and
+their two caveats are now lifted: the guards are priced separately, and nothing
+is subtracted by estimate.
+
+What is **not** settled is the question below, which is about data addresses
+rather than code fields and belongs to whichever ticket implements the image
+format.
+
 ## Open questions
 
 ### Does the region need a fixed address?
