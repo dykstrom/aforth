@@ -14,8 +14,8 @@
 // with symbols only that one assembler pass has.
 
 // STATE is a user variable like BASE: the word pushes the address of the cell
-// and @ and ! do the rest. Only ticket 010 makes anything write it; the
-// interpreter reads it from there on.
+// and @ and ! do the rest. : and ] set it, ; and [ clear it, machine_quit
+// clears it when it restarts, and interpret_source reads it for every name.
         DEFCODE "STATE", 5, state       // ( -- a-addr )
         ROOM    1
         add     x0, UP, #UV_STATE

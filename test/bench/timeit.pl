@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Johan Dykstrom
+# Copyright 2026 Johan Dykström
 
 # Times a list of jobs and prints the best wall clock each one reached, in
 # milliseconds with three decimals, one per line in the order given.

@@ -1,14 +1,17 @@
 # The outer interpreter
 
 How a typed line becomes work. The loop is `machine_quit` in `src/outer.S`, the
-words it exposes are in `src/interpreter.S`, and the two routines it calls to
-get into the machine are `machine_refill` and `machine_execute` at the bottom of
-that file.
+words it exposes — `STATE`, `ABORT`, `QUIT` and `BYE` — are in
+`src/words/quit.S`, and the two routines it calls to get into the machine are
+`machine_refill` and `machine_execute` at the bottom of `src/interpreter.S`.
 
-## The loop
+## The loop, and the routine under it
 
-`main` calls `machine_quit` after the banner. It reads a line, cuts a name out
-of it, and does one of three things with the name:
+`main` calls `machine_quit` after the banner. It reads a line, hands it to
+`interpret_source`, and decides what the number that comes back means.
+
+`interpret_source` is the half that consumes a parse area. It cuts a name out of
+the current source and does one of three things with the name:
 
 - the dictionary holds it, so the word runs;
 - it converts in `BASE`, so the cell is pushed;
@@ -19,10 +22,35 @@ compiled instead of run — unless its entry is marked `F_IMMEDIATE`, which is h
 `;` and `[` get their chance to end the definition — and a number is compiled as
 a literal instead of pushed. See [compiling.md](compiling.md).
 
-When the line is used up, aforth prints ` ok` and a newline and reads the next
-one. That is where the older Forths put it, and it is why `readline` is given an
-empty prompt: nothing is printed in front of what the user types. An empty line
-prints ` ok` like any other.
+When the parse area is used up it returns 0, and `machine_quit` prints ` ok` and
+a newline and reads the next line. That is where the older Forths put it, and it
+is why `readline` is given an empty prompt: nothing is printed in front of what
+the user types. An empty line prints ` ok` like any other.
+
+`EVALUATE` calls `interpret_source` too, which is the reason it is a routine of
+its own rather than the body of the loop. See [input.md](input.md).
+
+### It returns every error and raises none
+
+That matters in both directions, and it is the one thing to keep true when
+touching it.
+
+`machine_quit` calls it from **outside** `aforth_enter`, where a raise would
+unwind `sp` to a frame that has already been popped — the trap the last section
+of this file describes for `ROOM`. `EVALUATE` calls it from **inside** one,
+where a raise would unwind past `EVALUATE` and skip the input source it has to
+pop.
+
+So the undefined-word path calls `err_name` to remember the name and returns
+`ERR_UNDEFINED_WORD` rather than branching to `undefined_word`, which raises.
+`'` still goes through `undefined_word`; it is a word, and a word may raise.
+`dict_comma` and `dict_compile_literal` already reported rather than raised, and
+those numbers are returned as they stand.
+
+`ERR_ABORT` and `ERR_QUIT` come back the same way. They are not failures, and
+telling them apart is the caller's job: `machine_quit` restarts, and `EVALUATE`
+re-raises so that they reach the loop from inside a string the way they would
+from any word.
 
 The loop is assembly because it is what enters the machine and reads what
 unwound it. A definition can branch now, but a `QUIT` written in Forth would
@@ -63,10 +91,17 @@ machine the way an error does and still say nothing.
 
 | Number | What it means | What the loop does |
 |--------|---------------|--------------------|
-| 0 | the word finished | take the next name |
+| 0 | the parse area is empty | print ` ok`, read the next line |
 | `ERR_QUIT` | `QUIT` ran | empty the return stack, read the next line |
 | `ERR_ABORT` | `ABORT` ran | empty both stacks, read the next line |
 | anything else | a failure | report it, then empty both stacks and read the next line |
+
+Every input source above the terminal is dropped in all three of the last rows,
+and every file among them is closed. Forth-2012 says `QUIT` returns control to
+the terminal, and an error inside an included file must not leave the loop
+reading a file nobody is watching. The drop and the close are both `src_reset`.
+Nothing reaches either, because `include_impl` pops and closes on every path
+out of its own.
 
 The rest of the line goes with it in every case but the first. That is what
 `ABORT` means, and it is why `fnord 1 .` prints the message and no `1`.
@@ -96,12 +131,38 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 | `ERR_NAME_TOO_LONG` | `aforth: name too long` |
 | `ERR_DICT_FULL` | `aforth: dictionary full` |
 | `ERR_CONTROL_FLOW` | `aforth: unstructured control flow` |
+| `ERR_SOURCE_TOO_DEEP` | `aforth: input sources nested too deep` |
+| `ERR_UNTERMINATED_COMMENT` | `aforth: unterminated comment` |
+| `ERR_OPEN_FAILED` | `aforth: cannot open file: ` and the name |
 
-Only `ERR_UNDEFINED_WORD` names anything. `undefined_word` in `src/machine.S` takes the name
-in x0 and x1 and puts it in `UV_ERR_ADDR` and `UV_ERR_LEN` before raising, so
-the interpreter and `'` print the same message. The name points into the input
-buffer and the message is written before anything refills it. `'` at the end of
-a line has no name to give and its message stops after `word`.
+`ERR_REPORTED`, `ERR_ABORT` and `ERR_QUIT` print nothing and stay the three
+highest numbers: `quit_report` tells a message from a silent exit by comparing
+against the last number that has one. An error added in the middle renumbers
+them, which is allowed — the numbers are runtime only and nothing writes one to
+disk.
+
+`ERR_REPORTED` means the failure has already said what it was. `include_impl`
+raises it after writing the message and the traceback itself, because the file
+name and the line number live in a frame that is gone by the time the loop
+reads the number. `machine_quit` needs no branch for it: `quit_report` returns
+without printing, and the loop empties both stacks as it does for any failure.
+See [files.md](files.md).
+
+`ERR_UNDEFINED_WORD` and `ERR_OPEN_FAILED` are the two that name something, and
+they share one tail in `quit_report`. `err_name` in `src/machine.S` takes
+the name in x0 and x1 and puts it in `UV_ERR_ADDR` and `UV_ERR_LEN`.
+`undefined_word` is `err_name` and a raise, which is what `'` uses;
+`interpret_source` calls `err_name` and returns the number instead, so the
+interpreter and `'` print the same message by two routes. The name points into
+the input buffer and the message is written before anything refills it. `'` at
+the end of a line has no name to give and its message stops after `word`.
+`included_impl` calls `err_name` too, with the name of the file it could not
+open.
+
+`err_location` writes one line of the traceback under a message, and
+`err_number` writes a line number in decimal. The pictured output words would
+format a number, but they build into the buffer a program may be part way
+through using, and an error must not disturb it.
 
 The message is three writes rather than one formatted string, because aforth
 holds no output buffer to format into and `printf` is variadic, which the two
@@ -117,7 +178,8 @@ comparison against `UV_DS_LO` itself and branches to its own reporting. Any code
 that runs outside `aforth_enter` has the same problem.
 
 That check stays in the build without the stack guards. It runs once per number
-typed rather than once per word executed, so it is not what ticket 012 prices.
+typed rather than once per word executed, so it is not part of what the guards
+cost.
 
 The dictionary routines have the same problem and answer it the other way:
 `dict_comma` and `dict_set_here` report `ERR_DICT_FULL` rather than raising it,

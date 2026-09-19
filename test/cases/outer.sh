@@ -6,8 +6,11 @@
 #
 # Sourced by test/run-tests.sh, which defines prints, raises, exits and guards.
 
+# The one case that runs the binary itself rather than through a helper: every
+# helper drops the banner, and this is the case that wants it. It passes
+# DEFAULT_ARGS by hand for the same reason the helpers do.
 check "prints its banner" "aforth 0.0.0" \
-  "$(printf '' | "$BIN" 2>/dev/null | sed -n 1p)"
+  "$(printf '' | "$BIN" $DEFAULT_ARGS 2>/dev/null | sed -n 1p)"
 
 # A line that runs without error ends in ok, so the first case proves the whole
 # loop: refill, parse, look up, convert a number, execute, and report.
@@ -88,3 +91,63 @@ BYE
 
 # End of input ends the session the same way.
 exits  "exits successfully at end of input" '1 .' 0
+
+# Nested input sources.
+#
+# What the sources do while they are being read is in test/cases/input.sh.
+# These cases are what says the interpreter is back at the terminal afterwards:
+# the observable behaviour, whichever part of the code delivers it. Today that
+# is EVALUATE popping its own source as the error passes through it, not
+# src_reset, which no case can reach — see the comment on src_reset.
+
+# Eight levels nest and a ninth does not. The definition recurses through
+# EVALUATE, so each call stacks one more source until the guard fires.
+raises "a source too deep is reported" ': DEEP S" DEEP" EVALUATE ;
+DEEP' 'aforth: input sources nested too deep'
+
+# Where the limit falls, rather than only that there is one. Each Ln stacks one
+# more source than the one below it, so L8 uses every level and L9 wants one
+# that is not there. An off-by-one in SRC_LEVELS moves exactly these two.
+NEST_DEFS=': L1 S" 1 2 +" EVALUATE ;
+: L2 S" L1" EVALUATE ;
+: L3 S" L2" EVALUATE ;
+: L4 S" L3" EVALUATE ;
+: L5 S" L4" EVALUATE ;
+: L6 S" L5" EVALUATE ;
+: L7 S" L6" EVALUATE ;
+: L8 S" L7" EVALUATE ;
+: L9 S" L8" EVALUATE ;'
+prints "eight sources nest" "$NEST_DEFS
+L8 ." ' ok
+ ok
+ ok
+ ok
+ ok
+ ok
+ ok
+ ok
+ ok
+3  ok'
+raises "a ninth source does not" "$NEST_DEFS
+L9 ." 'aforth: input sources nested too deep'
+
+# An error inside a string ends the line it was on, as any error does, and the
+# next line still runs at the terminal.
+raises "an error inside EVALUATE names the word" 'S" fnord" EVALUATE' \
+  'aforth: undefined word: fnord'
+prints "an error inside EVALUATE drops the rest of the line" \
+  'S" fnord" EVALUATE 1 .
+2 .' '2  ok'
+prints "an error inside EVALUATE unwinds the sources" 'S" fnord" EVALUATE
+SOURCE-ID .' '0  ok'
+prints "a source too deep unwinds the sources" ': DEEP S" DEEP" EVALUATE ;
+DEEP
+SOURCE-ID .' ' ok
+0  ok'
+
+# ABORT and QUIT reach the loop from inside a string the same way they reach it
+# from a word, so each still does what it does to the stacks.
+prints "ABORT inside EVALUATE empties the data stack" '1 2 S" ABORT" EVALUATE
+.S' '<0>  ok'
+prints "QUIT inside EVALUATE keeps the data stack" '1 2 S" QUIT" EVALUATE
+.S' '<2> 1 2  ok'

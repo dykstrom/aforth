@@ -15,7 +15,11 @@ A space is the only delimiter `PARSE-NAME` skips. A tab in a line is part of
 the name it lands in, so a name typed with a tab in it is not found.
 
 `PARSE` skips nothing and takes its delimiter from the stack, which is what a
-comment or a string literal needs. `WORD` skips leading delimiters and copies
+comment or a string literal needs. The scan itself is `parse_impl`, which takes
+the delimiter in a register: `S"` and `."` call it with a double quote rather
+than carrying a second copy of the loop, so there is one place that decides
+what a delimiter does and what happens when it never comes. See
+[compiling.md](compiling.md). `WORD` skips leading delimiters and copies
 what it parses to `HERE` as a counted string, the transient region Forth-2012
 allows it — the next `WORD`, or the next thing that allocates, overwrites it, and
 `,` and `:` both do. A
@@ -28,20 +32,38 @@ name longer than 255 bytes cannot be counted in one byte, so the copy stops at
 definition as outside one. Neither parses into a string: each moves `>IN` and
 leaves nothing behind.
 
-`(` ends at the first `)` on the line, and at the end of the line when there is
-none. It does not nest, so `( a ( b )` is one comment and what follows the `)`
-is code again. Forth-2012 lets an implementation read another line looking for
-the `)`, and aforth does not: the only place it could read one from is the
-terminal, where waiting for a `)` the user does not know it wants is a trap.
+`(` ends at the first `)`. It does not nest, so `( a ( b )` is one comment and
+what follows the `)` is code again.
+
+What it does when the line runs out first depends on where the line came from.
+At the terminal and inside a string the comment ends with the line. Waiting at
+the terminal for a `)` the user does not know it wants is a trap, and a string
+has no next line to read.
+
+From a file it reads on. That is Forth-2012's File-Access word set: "if the end
+of the parse area is reached before a right parenthesis is found, refill the
+input buffer from the next line of the file, set `>IN` to zero, and resume
+parsing, repeating this process until either a right parenthesis is found or
+the end of the file is reached." A file cannot trap anyone the way the terminal
+can, so the reason for the old behaviour does not hold there.
+
+The standard says nothing about a file that ends before the `)`. aforth raises
+`ERR_UNTERMINATED_COMMENT`, which prints `aforth: unterminated comment` and
+gets the traceback of the file and the line under it. A missing `)` is almost
+always a mistake. `(` refills through `refill_impl` rather than the `REFILL`
+word, which is the same routine `include_impl` uses. See
+[input.md](input.md).
 
 `\` gives the rest of the line to the comment. It is Forth-2012 Core
 Extensions rather than Core, so a program that has to run on a system without
 it cannot use it.
 
-Both are written in `src/words/parsing.S`. `\` is the one word whose name the
-source escapes: `DEFCODE "\\"` is two characters in the file and one byte in
-the dictionary, and `test/run-tests.sh` unescapes it before it checks that every
-word has a case.
+Both are written in `src/words/parsing.S`. `\` was the first word whose name
+the source escapes — `DEFCODE "\\"` is two characters in the file and one byte
+in the dictionary — and `S"`, `."` and `(S")` escape a double quote the same
+way. `test/run-tests.sh` unescapes both before it checks that every word has a
+case; see [testing.md](testing.md) for the one name that check cannot really
+see.
 
 `COUNT` turns a counted string into the address and length every other word
 takes. `CHAR` is `PARSE-NAME DROP C@`, and `[CHAR]`, which compiles that byte
@@ -71,8 +93,10 @@ such word. `'` parses the next name and gives its token, and raises
 `ERR_UNDEFINED_WORD` when the dictionary does not hold it — `aforth: undefined
 word: ` and the name. It keeps the name in x27 and x28 across the search,
 because `dict_find` returns in x0 and x1 and `undefined_word` wants the name
-there. `machine_quit` raises the same error through the same routine, so the
-two print the same message.
+there. `interpret_source` reports the same error through the same routine, so
+the two print the same message; see
+[outer-interpreter.md](outer-interpreter.md) for why one raises and one
+returns.
 
 ## Numbers
 
@@ -95,8 +119,9 @@ says which way it went. The number prefixes Forth-2012 allows a text
 interpreter — `#`, `$`, `%` and `'c'` — are not implemented.
 
 The conversion itself is `number_impl`, and the word is a call to it.
-`machine_quit` calls the same routine for every name the dictionary does not
-hold, so the word and the interpreter cannot disagree about what a number is.
+`interpret_source` calls the same routine for every name the dictionary does
+not hold, so the word and the interpreter cannot disagree about what a number
+is.
 
 ## Where the tests are
 

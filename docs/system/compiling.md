@@ -75,8 +75,8 @@ surprised by.
 
 ## Compiling
 
-`STATE` is 0 interpreting and -1 compiling. `machine_quit` reads it for every
-name, after the search and after the number conversion:
+`STATE` is 0 interpreting and -1 compiling. `interpret_source` reads it for
+every name, after the search and after the number conversion:
 
 | STATE | The dictionary holds the name | The name converts | Neither |
 |-------|------------------------------|-------------------|---------|
@@ -96,8 +96,8 @@ compiling when it meets it.
 
 The hiding is what makes a name used inside a definition mean the word that was
 there before rather than the one being written, so `: X X 2 + ;` builds on the
-previous `X`. Forth-2012's `RECURSE` is what a definition calls itself with, and
-it is not implemented.
+previous `X`. `RECURSE` is what a definition calls itself with instead, and it
+is in [control-flow.md](control-flow.md) with the rest of what it works around.
 
 `STATE` outlives a line — `machine_quit` clears it when it restarts, not when it
 refills — so the body of a definition may be typed on as many lines as the
@@ -108,6 +108,70 @@ there is nothing left to parse at the end of one.
 stack, which is how a value is worked out while a definition is being written
 and then compiled into it. `[CHAR]` is `CHAR` and `LITERAL` in one word.
 `IMMEDIATE` marks the newest entry, which is the definition `;` has just ended.
+
+## String literals
+
+`S"` and `."` are the third shape of inline data, and the first that is not one
+cell. A string compiled into a definition is `(S")`'s token, a count cell, the
+bytes, and zeroes up to the next cell:
+
+```
+  TOK_(S")  |    5    | h e l l o . . . |  the next token
+  <- cell ->  <-cell->  <--- one cell --->
+```
+
+`(S")` reads the count the way `(LIT)` reads its cell, takes the bytes from
+where the list stands, and steps `IP` over `(count + 7) & -8` of them. It is
+hidden for the reason `(LIT)` is.
+
+The padding is what keeps a definition holding a string one unbroken run of
+cells. A branch distance is counted in cells, so a string that left `HERE`
+unaligned would put a fraction of a cell inside the distance `cf_resolve`
+works out and nothing in [control-flow.md](control-flow.md) would still hold.
+Nothing there had to change.
+
+`dict_compile_string` in `src/words/compile.S` writes all of it. It tests the
+room for the token, the count and the padded bytes in one comparison before it
+writes any of them, so a string that does not fit reports `ERR_DICT_FULL`
+having written nothing — which a run of `dict_comma` calls could not do. The
+pad is zeroed, as `header_impl` zeroes a name's pad, so that the same source
+builds the same bytes.
+
+Both words are immediate and both parse with a double quote as the delimiter
+from where `>IN` stands, through `parse_impl`; see [parsing.md](parsing.md).
+`parse_name_impl` has already stepped past the one space that ended the word's
+own name, so `S" ccc"` takes `ccc` and a quote that comes straight away gives
+the empty string. A string whose delimiter never comes takes the rest of the
+line and raises nothing, which is the choice `(` makes and for the same reason.
+
+While interpreting, `S"` copies the bytes into one of the transient buffers and
+`."` writes them straight out. `."` compiles `TYPE`'s token after the string
+rather than having a run-time routine of its own, so a printed string leaves in
+the one `write` `TYPE` already makes of it.
+
+### The transient buffers
+
+Forth-2012 leaves the interpretation semantics of both words undefined in Core
+and defines `S"`'s in the File-Access word set, where 11.3.4 asks that the
+buffers holding the result be at least 80 characters long and that there be at
+least two of them — so `S" a" S" b"` must leave both strings where they were
+put.
+
+That rules out `PAD`, whose contents 3.3.3.6 puts under the complete control of
+the user: no word in the standard may place anything there. It rules out the
+pictured output buffer too, which holds a number being built and which `.R`
+reads across a call to `SPACES`.
+
+So the region has an area of its own for them, `SBUF_OFF` in
+`src/include/machine.h`, taken round-robin by `sbuf_take` (ADR 0009). There are four
+buffers rather than the two the standard asks for because `REGION_SIZE` has to
+stay a whole number of 16 KiB pages and 16 KiB is the smallest step that keeps
+it one; the slack goes into the count. Each is as large as the input buffer, so
+a string parsed out of a line always fits and nothing is truncated — an
+assembly-time check in `machine.h` is what keeps that true if either size moves.
+
+What `."` does while interpreting is aforth's own; see
+[output.md](output.md).
 
 ## What an error abandons
 
@@ -121,10 +185,10 @@ use again. Forth-2012 leaves this to the system, and reclaiming it would mean
 
 ## What is not here
 
-`CREATE DOES>` and `POSTPONE` were cut from the epic. `[']` and the string
-literals are not implemented. Control flow inside a definition is in
-[control-flow.md](control-flow.md), and `RECURSE` is there too, because what it
-works around is the hiding `:` and `;` do.
+`CREATE DOES>`, `POSTPONE` and `[']` are not implemented, and neither is
+`SLITERAL` or the rest of the String word set. Control flow inside a definition
+is in [control-flow.md](control-flow.md), and `RECURSE` is there too, because
+what it works around is the hiding `:` and `;` do.
 
 ## Where the tests are
 

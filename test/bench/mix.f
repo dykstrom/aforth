@@ -1,5 +1,5 @@
 \ SPDX-License-Identifier: Apache-2.0
-\ Copyright 2026 Johan Dykstrom
+\ Copyright 2026 Johan Dykström
 \
 \ aforth's dispatch benchmark: a mix of stack and arithmetic words.
 \

@@ -9,7 +9,7 @@
 #
 # Sourced by test/run-tests.sh, which defines prints, raises, exits and guards.
 
-# The whole of the ticket in three lines: a name, a token list, and the word
+# The whole of a definition in three lines: a name, a token list, and the word
 # run afterwards.
 prints ": and ; define a word" ': SQUARE DUP * ;
 5 SQUARE .' ' ok
@@ -137,3 +137,80 @@ prints "an error leaves the loop interpreting" ': BAD fnord ;
 1 .' '1  ok'
 prints "an abandoned definition cannot be found" ': BAD fnord ;
 BL WORD BAD DUP FIND . = .' '0 -1  ok'
+
+# The two string literals.
+#
+# S" and ." are immediate, so each has two behaviours to test: what it compiles
+# into a definition and what it does typed at the prompt. See
+# docs/system/compiling.md for the inline shape and docs/system/output.md for
+# what ." does while interpreting.
+
+prints 'S" leaves a string while interpreting' 'S" hello" TYPE' 'hello ok'
+prints 'S" leaves an address and a length' 'S" hello" NIP .' '5  ok'
+
+# A delimiter that comes straight away gives the empty string, which is the
+# shortest thing S" can parse rather than a case it refuses.
+prints 'S" parses the empty string' 'S" " NIP .' '0  ok'
+
+# Forth-2012 11.3.4 wants two strings made one after the other to be there at
+# once, so the transient buffers are taken in turn rather than reused. Printing
+# them in the order they were not made is what says so.
+prints 'two interpreted strings are both live' 'S" one" S" two" TYPE TYPE' \
+  'twoone ok'
+
+# A definition carries its own bytes, so two definitions do not share a buffer
+# and neither loses its string to the other.
+prints 'a definition carries its string' ': F S" abc" ;
+F TYPE' ' ok
+abc ok'
+prints "two definitions keep their own strings" ': F S" abc" ;
+: G S" xyz" ;
+F TYPE G TYPE' ' ok
+ ok
+abcxyz ok'
+
+# The bytes are padded to a cell, so the token after the string is where the
+# list expects it. A length one under, one over and exactly a cell is what
+# catches the arithmetic being off by one either way.
+prints "a definition steps over seven bytes" ': F S" 1234567" 2DROP 42 ;
+F .' ' ok
+42  ok'
+prints "a definition steps over eight bytes" ': F S" 12345678" 2DROP 42 ;
+F .' ' ok
+42  ok'
+prints "a definition steps over nine bytes" ': F S" 123456789" 2DROP 42 ;
+F .' ' ok
+42  ok'
+
+# A branch distance is counted in cells, and the padding is what keeps a string
+# a whole number of them. A branch measured over one lands right or the word
+# runs into the string as if it were tokens.
+prints "a branch over a string lands right" ': F 0= IF S" yes" ELSE S" no" THEN TYPE ;
+0 F
+1 F' ' ok
+yes ok
+no ok'
+
+prints '." prints while interpreting' '." hello"' 'hello ok'
+prints '." prints from a definition' ': F ." hello" ;
+F' ' ok
+hello ok'
+
+# ." compiles TYPE after the string, so what follows it in the definition still
+# runs. Nine bytes puts the next token on the far side of a pad.
+prints '." leaves the list where the next token is' ': F ." 123456789" CR 42 . ;
+F' ' ok
+123456789
+42  ok'
+
+# A string whose delimiter never comes takes the rest of the line, which is
+# what ( does with a comment and for the same reason. The next line still runs.
+prints 'S" with no closing quote takes the line' 'S" abc
+NIP .' ' ok
+3  ok'
+
+# The room for the whole string is tested before any of it is written, so a
+# string that will not fit leaves the dictionary where it was.
+raises 'compiling a string reports a full dictionary' 'UNUSED 24 - ALLOT
+: Z
+S" x"' 'aforth: dictionary full'

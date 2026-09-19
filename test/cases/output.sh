@@ -64,8 +64,9 @@ prints ".S prints a negative item" '-1 .S'           '<1> -1  ok'
 prints ".S leaves the stack alone" '1 2 .S .S'       '<2> 1 2 <2> 1 2  ok'
 prints ".S follows BASE"           '255 HEX .S DECIMAL' '<1> FF  ok'
 
-# WORDS prints the whole dictionary, which grows with every ticket, so these
-# cases ask whether one name is in the list rather than comparing the list.
+# WORDS prints the whole dictionary, which grows whenever a word is added, so
+# these cases ask whether one name is in the list rather than comparing the
+# list.
 # The list is split to one name per line, with the interpreter's ok dropped.
 words_has() {
   if out "$1" | sed '$d' | tr ' ' '\n' | grep -qxF "$2"; then

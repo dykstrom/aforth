@@ -120,6 +120,15 @@ guards "COUNT"   'COUNT'   0
 guards "FIND"    'FIND'    0
 guards ">NUMBER" '>NUMBER' 3
 guards "?NUMBER" '?NUMBER' 1
+guards "EVALUATE" 'EVALUATE' 1
+guards "OPEN-FILE" 'OPEN-FILE' 2
+guards "CLOSE-FILE" 'CLOSE-FILE' 0
+guards "READ-FILE" 'READ-FILE' 2
+guards "READ-LINE" 'READ-LINE' 2
+guards "FILE-SIZE" 'FILE-SIZE' 0
+guards "FILE-POSITION" 'FILE-POSITION' 0
+guards "REPOSITION-FILE" 'REPOSITION-FILE' 2
+guards "FILE-STATUS" 'FILE-STATUS' 1
 
 guards "LITERAL"  'LITERAL'  0
 guards "CONSTANT" 'CONSTANT' 0
@@ -237,6 +246,20 @@ room "WHILE"      'BEGIN WHILE'
 room "DOCON"      '1 CONSTANT ONE DUP ONE'
 room "DOVAR"      'VARIABLE V DUP V'
 room "(LIT)"      ': P 1 ; DUP P'
+
+# S" pushes two, so one free cell is already too few and no DUP is needed to
+# use the last one up. (S") is hidden, and reached the way (LIT) is: through a
+# definition that carries a string.
+room 'S"'         'S" x"'
+room '(S")'       ': P S" x" ; P'
+room "SOURCE-ID"  'DUP SOURCE-ID'
+room "R/O"        'DUP R/O'
+
+# Each takes a fileid and leaves three cells, so one free cell is already too
+# few. The guard fires before the descriptor is looked at, which is why a fill
+# value of 0 is a good enough fileid here.
+room "FILE-SIZE"     'FILE-SIZE'
+room "FILE-POSITION" 'FILE-POSITION'
 
 # The four that read the return stack check it before they check the data
 # stack, so each line puts something there first and fills the gap that left.

@@ -1,5 +1,5 @@
 \ SPDX-License-Identifier: Apache-2.0
-\ Copyright 2026 Johan Dykstrom
+\ Copyright 2026 Johan Dykström
 \
 \ aforth's second benchmark: a loop built around PICK and ROLL.
 \

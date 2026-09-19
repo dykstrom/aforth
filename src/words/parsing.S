@@ -5,8 +5,8 @@
 //
 // Three answers the outer interpreter needs for every name on a line: where
 // the name ends, whether the dictionary holds it, and what number it is if
-// not. machine_quit in src/outer.S decides what to do with them; nothing here
-// decides anything.
+// not. interpret_source in src/outer.S decides what to do with them; nothing
+// here decides anything.
 //
 // See docs/system/parsing.md.
 //
@@ -36,6 +36,7 @@
 // marked F_HIDDEN is stepped over rather than matched.
         .p2align        2
         .globl  dict_find
+        FUNC_TYPE(dict_find)
 dict_find:
         ldr     x2, [UP, #UV_LATEST]    // the newest entry, an offset
 1:      cbz     x2, df_none             // 0 ends the chain
@@ -65,11 +66,8 @@ df_next:
         b       1b
 
 df_found:
-        // The code field follows the name, padded to a cell: the arithmetic
-        // HEADER does at assembly time, done here at run time.
         ldrb    w5, [x3, #ENT_COUNT]
-        add     x5, x5, #(ENT_NAME + 7)
-        and     x5, x5, #-8
+        CFOFF   x5, x5                  // past the name, to the code field
         add     x0, x2, x5
         ldrb    w1, [x3, #ENT_FLAGS]
         ret
@@ -78,6 +76,7 @@ df_none:
         mov     x0, #0
         mov     x1, #0
         ret
+        FUNC_SIZE(dict_find)
 
 // The value of the digit in w0, or -1 when it is not a digit in BASE.
 //
@@ -119,6 +118,7 @@ dv_bad:
 // cannot disagree about what a number is.
         .p2align        2
         .globl  number_impl
+        FUNC_TYPE(number_impl)
 number_impl:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
@@ -157,6 +157,7 @@ ni_bad:
         mov     x1, #0
         ldp     x29, x30, [sp], #16
         ret
+        FUNC_SIZE(number_impl)
 
 // Cut the next name out of the input buffer: skip spaces, take everything to
 // the next space, and leave >IN past it. Returns the address in x0 and the
@@ -165,6 +166,7 @@ ni_bad:
 // PARSE-NAME is this, and ' is this followed by a search.
         .p2align        2
         .globl  parse_name_impl
+        FUNC_TYPE(parse_name_impl)
 parse_name_impl:
         ldr     x0, [UP, #UV_TIB]
         ldr     x1, [UP, #UV_TIB_LEN]
@@ -196,6 +198,7 @@ parse_name_impl:
         mov     x0, x4
         mov     x1, x6
         ret
+        FUNC_SIZE(parse_name_impl)
 
         DEFCODE "PARSE-NAME", 10, parse_name    // ( "<spaces>name<space>" -- c-addr u )
         ROOM    2
@@ -204,17 +207,26 @@ parse_name_impl:
         DPUSH   x1
         NEXT
 
-// PARSE takes its delimiter from the stack and skips nothing: it starts where
-// >IN stands, which is what makes it the word a comment or a string literal is
-// parsed with.
-        DEFCODE "PARSE", 5, parse       // ( char "ccc<char>" -- c-addr u )
-        NEED    1
-        ROOM    1
-        mov     x7, TOS                 // the delimiter
+// Take everything from where >IN stands to the next byte equal to x0, and
+// leave >IN past it. Returns the address in x0 and the length in x1, which is
+// 0 when the delimiter is the very next byte.
+//
+// Nothing is skipped first, which is the whole difference from
+// parse_name_impl: the parse starts where the line stands, so a comment or a
+// string literal keeps the spaces it was written with. A delimiter that never
+// comes ends the parse at the end of the line.
+//
+// PARSE is this with the delimiter off the stack, and S" and ." are this with
+// a double quote.
+        .p2align        2
+        .globl  parse_impl
+        FUNC_TYPE(parse_impl)
+parse_impl:
+        mov     x7, x0                  // the delimiter
         ldr     x0, [UP, #UV_TIB]
         ldr     x1, [UP, #UV_TIB_LEN]
         ldr     x2, [UP, #UV_TO_IN]
-        add     x4, x0, x2
+        add     x4, x0, x2              // where the string starts
         mov     x5, x2
 1:      cmp     x2, x1
         b.hs    2f
@@ -223,35 +235,76 @@ parse_name_impl:
         b.eq    2f
         add     x2, x2, #1
         b       1b
-2:      sub     x6, x2, x5
+2:      sub     x6, x2, x5              // how long it is
         cmp     x2, x1
         b.hs    3f
         add     x2, x2, #1              // step over the delimiter
 3:      str     x2, [UP, #UV_TO_IN]
-        mov     TOS, x4
-        DPUSH   x6
+        mov     x0, x4
+        mov     x1, x6
+        ret
+        FUNC_SIZE(parse_impl)
+
+// PARSE takes its delimiter from the stack and skips nothing: it starts where
+// >IN stands, which is what makes it the word a comment or a string literal is
+// parsed with.
+        DEFCODE "PARSE", 5, parse       // ( char "ccc<char>" -- c-addr u )
+        NEED    1
+        ROOM    1
+        mov     x0, TOS
+        bl      parse_impl
+        mov     TOS, x0
+        DPUSH   x1
         NEXT
 
 // The two comment words. Both are immediate, so a comment reads the same way
 // inside a definition as outside one, and both move >IN rather than parsing
 // into a string nobody wants.
 //
-// ( ends at the first ) on the line, and at the end of the line when there is
-// none. Forth-2012 lets an implementation read another line looking for the ),
-// and aforth does not: the only place it could read one from is the terminal,
-// where waiting for a ) the user does not know it wants is a trap.
+// ( ends at the first ) and does not nest. From a file it runs on into the
+// next line, which is what Forth-2012's File-Access word set asks for: "if the
+// end of the parse area is reached before a right parenthesis is found, refill
+// the input buffer from the next line of the file, set >IN to zero, and resume
+// parsing". At the terminal and inside a string it ends with the line instead.
+// Waiting at the terminal for a ) the user does not know it wants is a trap,
+// and a file cannot trap anyone that way.
         DEFCODE "(", 1, paren, F_IMMEDIATE      // ( "ccc<paren>" -- )
+paren_scan:
         ldr     x0, [UP, #UV_TIB]
         ldr     x1, [UP, #UV_TIB_LEN]
         ldr     x2, [UP, #UV_TO_IN]
 1:      cmp     x2, x1
-        b.hs    2f
+        b.hs    paren_eol
         ldrb    w3, [x0, x2]
         add     x2, x2, #1              // past the byte either way
         cmp     w3, #41                 // ')'
         b.ne    1b
-2:      str     x2, [UP, #UV_TO_IN]
+        str     x2, [UP, #UV_TO_IN]
         NEXT
+
+// The line ran out with no ) on it.
+paren_eol:
+        str     x2, [UP, #UV_TO_IN]
+        ldr     x3, [UP, #UV_SOURCE_ID]
+        cbz     x3, paren_done          // the terminal
+        cmn     x3, #1
+        b.eq    paren_done              // a string
+
+        bl      refill_impl
+        cbz     x1, 1f
+        mov     x0, x1                  // the line did not fit the buffer
+        b       machine_error
+1:      cbz     x0, paren_unterminated
+        b       paren_scan
+
+paren_done:
+        NEXT
+
+// The file ended before the ). Forth-2012 says nothing about this, and a
+// missing ) is almost always a mistake worth reporting.
+paren_unterminated:
+        mov     x0, #ERR_UNTERMINATED_COMMENT
+        b       machine_error
 
 // \ gives the rest of the line to the comment, which is the whole of
 // SOURCE NIP >IN ! in two instructions. Core Extensions rather than Core.
@@ -403,7 +456,7 @@ parse_name_impl:
         NEXT
 
 // CHAR is PARSE-NAME and the first byte of what it found. [CHAR], its compiling
-// twin, waits for ticket 010 and the literals it has nothing to compile without.
+// twin, is in src/words/compile.S with the other words that compile.
         DEFWORD "CHAR", 4, char         // ( "<spaces>name" -- char )
         TOKEN   parse_name
         TOKEN   drop

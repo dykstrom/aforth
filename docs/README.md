@@ -1,66 +1,60 @@
 # docs/
 
-Everything written about this project lives here, sorted by what each file is for.
+Everything written about aforth lives here, sorted by what each file is for.
 
-## Three kinds of docs
-
-Before you read a doc, you need to know what kind it is. There are three:
-
-- **What the code does today** (descriptive) — `system/`. Kept up to date as the code changes.
-- **What the code must do** (prescriptive) — `architecture/`. The rules your system has to follow. Updated when the rules change.
-- **How you got here** (historical) — `working-notes/`, `reference/`, `adr/`. Your past thinking and decisions. Frozen once written.
-
-Each kind has its own update rules. If you mix them up in one folder, readers can't tell whether they're reading how things are now, rules to follow, or a snapshot of past thinking.
-
-## Layout
+Before you read a doc, you need to know what kind it is. There are three, and
+they have different update rules:
 
 ```
 docs/
-├── system/         ← DESCRIPTIVE  — what the codebase IS (updated as code changes)
-├── architecture/   ← PRESCRIPTIVE — what the system MUST do (updated as rules change)
-├── adr/            ← HISTORICAL   — discrete decisions (append-only)
-├── reference/      ← HISTORICAL   — stabilized rationale (append-only)
-└── working-notes/  ← HISTORICAL   — research substrate; not authoritative until promoted
+├── system/         ← DESCRIPTIVE  — what the code does today (updated as code changes)
+├── architecture/   ← PRESCRIPTIVE — what the code must do (updated as rules change)
+├── adr/            ← HISTORICAL   — one decision each (immutable once shipped)
+├── reference/      ← HISTORICAL   — the long argument behind a decision (append-only)
+└── working-notes/  ← HISTORICAL   — research; not authoritative until promoted
 ```
 
-| Folder | Category | Holds | Update semantics |
-|---|---|---|---|
-| [`system/`](system/) | Descriptive | Living docs about the codebase — auth, data model, conventions. Binding context for agents working in those areas. | Updated as code changes. |
-| [`architecture/`](architecture/) | Prescriptive | Operational rules in MUST voice + the structural `overview.md`. Integration specs, contracts, sequences. | Updated as rules change. |
-| [`adr/`](adr/) | Historical | Discrete decisions with consequences (Nygard-lite). | Immutable once shipped; supersede, never edit. |
-| [`reference/`](reference/) | Historical | Long-form rationale promoted from stabilized working notes. | Append-only; revised deliberately. |
-| [`working-notes/`](working-notes/) | Historical | Raw research, half-formed opinions, things still moving. | In motion until promoted. |
+| Folder | Holds | Update semantics |
+|---|---|---|
+| [`system/`](system/) | How the machine, the interpreter, the words, the build and the tests actually work. Binding context for anyone working in those areas. | Updated in the same change as the code. |
+| [`architecture/`](architecture/) | `design-goals.md`, what aforth must be; `machine-rules.md`, the rules for writing it. MUST voice, each rule citing its ADR. | Updated when the rules change. |
+| [`adr/`](adr/) | One architectural decision per file, with its context and consequences. | Immutable once shipped; supersede, never edit. |
+| [`reference/`](reference/) | The full argument behind a decision, too long for an ADR — `dispatch-performance.md` is the one so far. | Append-only; revised deliberately. |
+| [`working-notes/`](working-notes/) | Thinking still in motion. Nothing here is a rule. | In motion until promoted. |
 
 ## How content flows
 
-**Historical docs** travel through a funnel:
-
-1. **Working note.** Someone has a take. Goes into `working-notes/` with a `Status:` header. Opinions may shift.
-2. **ADR (sometimes).** If the take resolves a structural choice with downstream consequences, an ADR records the decision in the same change.
-3. **Reference doc.** When the opinion stops moving, substance promotes into `reference/`. The original note stays behind, frozen.
-
-**Descriptive docs** in `system/` don't have a funnel. They're written or updated whenever the codebase's current state changes in a way an agent would need to know.
-
-**Prescriptive docs** in `architecture/` are distilled from multiple upstream sources — ADRs, external API contracts, compliance requirements, post-incident learnings, reference docs — into terse imperative rules. Each rule cites its source.
-
-A typical chain across categories:
+A question starts as a working note. If it resolves a structural choice, an ADR
+records the decision. If the argument behind it is longer than an ADR should be,
+the substance is promoted into `reference/` and the note is frozen. The rule the
+decision imposes goes into `architecture/`, and `system/` describes the code that
+satisfies it.
 
 ```
-working-notes/ ──→ reference/ ──→ adr/    (the historical record of how a decision was made)
+working-notes/ ──→ reference/ ──→ adr/       how the decision was made
 
-ADR + external contract + compliance ──→ architecture/   (the rule, distilled and in force)
+                   adr/ ──→ architecture/    the rule, in force
 
-                                          ↓
+                            ↓
 
-                                        system/   (the implementation that satisfies the rule)
+                          system/            the code that satisfies it
 ```
 
-## What does NOT go in docs/
+aforth has walked that whole path once:
+[`working-notes/dispatch-cost-of-index-code-fields.md`](working-notes/dispatch-cost-of-index-code-fields.md)
+asked what an index code field costs,
+[`reference/dispatch-performance.md`](reference/dispatch-performance.md)
+answered it with measurements, [ADR 0005](adr/0005-indirect-threading-with-index-code-fields.md)
+records the decision, [`architecture/machine-rules.md`](architecture/machine-rules.md)
+states the rule, and [`system/inner-interpreter.md`](system/inner-interpreter.md)
+describes the dispatch that results.
 
-- Code, scripts, build artifacts → those live in the project's source tree, not here.
-- Operational runbooks better served by an actual tool (a status page, a dashboard) → link from here, don't duplicate.
-- Generated content (API specs, type definitions) → check it in next to the code that produces it.
+## What does not go here
 
-## Each sub-folder has its own README
+- Source, scripts and build output — those live in `src/`, `lib/`, `test/` and
+  `build/`.
+- Anything the code already says. A doc that repeats a routine's comment goes
+  stale on its own schedule.
 
-Open any sub-folder for its rules — what goes there, what doesn't, the lifecycle of a file inside it. Read the relevant folder's README before adding content to it.
+Each sub-folder has a README with its own rules. Read it before adding a file
+there.

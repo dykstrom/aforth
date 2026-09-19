@@ -1,44 +1,55 @@
 # Durable project context
 
-This folder holds the project's durable context — distilled, persistent knowledge that should outlive any single change. It is intentionally placed in the project's regular documentation folder so developers and agents find it under the same familiar path.
-
-The folder is organized into three categories by what kind of knowledge each file holds:
-
-- **Descriptive** — what the codebase *is* right now. Lives in `system/`. Updated as code changes.
-- **Prescriptive** — what the system *must* do. Lives in `architecture/`. Operational rules in MUST / MUST NOT / SHOULD voice; updated as rules change.
-- **Historical** — how decisions were made and why. Lives in `adr/` (decisions), `reference/` (rationale), and `working-notes/` (research). Append-only or immutable.
-
-The three categories have different update semantics, and an agent needs to know which kind it is reading before it can use the file.
+This folder holds what should outlive any single change. [README.md](README.md)
+says what each sub-folder is for and how a fact travels between them; this file
+says how to use them while working.
 
 ## How to consult this folder
 
-Files in `system/` and `architecture/` are binding context — meant to be read by agents working anywhere in the codebase, not just inside the folder. Before substantive work in a given area, read the relevant scoped files:
+`system/` and `architecture/` are binding context, meant to be read by anyone
+working anywhere in the codebase. Before substantive work, read the files scoped
+to the area:
 
-- Touching auth, sessions, tokens, or anything trust-related → read `system/security.md` for what exists, and `architecture/security.md` (if present) for the rules.
-- Touching the API surface, request handling, or external interfaces → read `system/api-conventions.md` and `architecture/api-conventions.md` (if present).
-- Touching the data layer, schema, or persistence → read `system/data-model.md` and `architecture/data-model.md` (if present).
+| Touching | Read |
+|---|---|
+| any Forth word, or the dictionary | `system/inner-interpreter.md`, and `architecture/machine-rules.md` for the rules |
+| the registers, the region, or how a word leaves the machine early | `architecture/machine-rules.md`, `system/outer-interpreter.md` |
+| the `QUIT` loop, or an error message | `system/outer-interpreter.md` |
+| input, output, parsing, files, compiling or control flow | the `system/` file of that name |
+| start-up, the command line, or the init files | `system/startup.md`, and `architecture/design-goals.md` |
+| assembly of any kind | `system/assembler.md` — every entry there cost a build to find |
+| the suite, or a new case | `system/testing.md` |
+| dispatch performance | `system/benchmark.md`, then `reference/dispatch-performance.md` |
 
-If a file scoped to your current area exists, treat its contents as binding. Rules in `architecture/` outrank training-data assumptions and general defaults; descriptions in `system/` outrank training-data assumptions about how the code is laid out. If multiple files seem related, read them all — files here are kept short specifically so reading several is cheap.
+Rules in `architecture/` outrank training-data assumptions and general defaults;
+descriptions in `system/` outrank assumptions about how the code is laid out. If
+several files seem related, read them all — they are kept short so that reading
+several is cheap.
 
 ## What `/trace:distil` writes here
 
-`/trace:distil` routes each distilled candidate to one of two destinations based on what kind of knowledge it is:
+A distilled fact lands in `system/<topic>.md` by default — a convention in
+force, a durable design choice, a non-obvious gotcha — or in
+`architecture/<topic>.md` when it is a rule in MUST voice, distilled from an
+ADR's consequence or a platform constraint.
 
-- **Descriptive** (the default) → `system/<topic>.md`. Conventions in force, durable design choices, non-obvious gotchas, security boundaries observed in the code.
-- **Prescriptive** → `architecture/<topic>.md` (only if `architecture/` exists in the project). Operational rules in MUST voice — typically distilled from an ADR's consequence, an external contract, a compliance requirement, or a post-incident learning.
+## What does not go here
 
-New files always land under `system/` or `architecture/`. Files that already live at the folder root (from earlier versions of the plugin) are updated at their existing path — no forced migration.
-
-## What `/trace:distil` does not write here
-
-- Implementation details that the code itself documents.
-- Information already in the root `AGENTS.md` (this folder supplements it, does not duplicate it).
-- Decision rationale and alternatives considered — those go in an immutable ADR under `adr/`, written by `/trace:adr`. `system/` files record the *resulting convention*; `architecture/` files record the *resulting rule*; ADRs record *why it was chosen*.
-- Long-form rationale — that's `reference/` (if the project uses it).
-- Aspirational or speculative content — only describe current state.
+- Implementation detail the code already documents.
+- Anything already in the root `AGENTS.md` — this folder supplements it.
+- Decision rationale and alternatives considered: those are an ADR in `adr/`,
+  written by `/trace:adr`. `system/` records the resulting convention,
+  `architecture/` the resulting rule, an ADR *why it was chosen*.
+- Long-form rationale — that is `reference/`.
+- Aspirational or speculative content. Describe current state only.
 
 ## File naming
 
-Files scoped to a meaningful concept: `security.md`, `data-model.md`, `kafka-events.md`, `api-conventions.md`. Not so narrow they fragment the context (no `that-blue-button.md`), not so broad they become a dump (`misc.md`).
-
-When the same area has both descriptive and prescriptive content, **use the same filename in both folders**: `system/api.md` describes the API client; `architecture/api.md` constrains it. Readers move between them for the same area.
+Kebab-case, scoped to one meaningful concept, in aforth's own vocabulary:
+`inner-interpreter.md`, `control-flow.md`, `assembler.md`. Not so narrow they
+fragment, not so broad they become a dump. When one area has both a descriptive
+and a prescriptive file, give them the same filename so a reader can move
+between them without translation. `architecture/machine-rules.md` is the
+exception: its rules bind both `system/inner-interpreter.md` and
+`system/outer-interpreter.md`, so it is named for the rules rather than for one
+of them.

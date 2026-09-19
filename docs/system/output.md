@@ -1,7 +1,7 @@
 # Output
 
 How aforth writes text and formats numbers. The words are in
-`src/interpreter.S`, the one routine that reaches libc is `write_stdout` in
+`src/words/output.S`, the one routine that reaches libc is `write_stdout` in
 `src/machine.S`, and the buffer they build numbers in is the pictured output
 area of the region described in `src/include/machine.h`.
 
@@ -36,6 +36,15 @@ immediately, in order, one call instead of n.
 field of twenty went from 6185 ns to 680 ns on macOS, a factor of nine, because
 the eighteen spaces went from eighteen `write` calls to one.
 
+`."` is the other word with more than one byte to write, and it makes one call
+too. Compiled, it is `(S")` and `TYPE`, so the bytes leave through the same
+`write` every other string leaves through; interpreted, it calls `write_stdout`
+itself. Forth-2012 leaves the interpretation semantics of `."` undefined, so a
+`."` typed at the prompt printing what follows it is aforth's own and a program
+that must run elsewhere cannot rely on it. The word is in
+`src/words/compile.S` with `S"`, because what it mostly does is compile; see
+[compiling.md](compiling.md).
+
 ## Numbers are built in the hold buffer
 
 `<# # #S HOLD SIGN #>` are the standard's own words and they work the standard's
@@ -69,14 +78,15 @@ in aforth's own bookkeeping.
 ## Every printing word follows BASE
 
 `BASE` is a user variable: the word pushes the address of the cell and `@` and
-`!` do the rest. `DECIMAL` and `HEX` write it directly, there being no literal
-to compile until ticket 010.
+`!` do the rest. `DECIMAL` and `HEX` write it in two instructions rather than
+as token lists, a built-in list having no way to carry a literal.
 
 `.`, `U.`, `.R` and `U.R` are token lists over the pictured output words, which
 is what the standard's own definitions look like and what keeps them all
 honest: there is one place a digit is made, and `#` reads `BASE` there.
-`FALSE` stands in for the zero high half of a double in those lists, nothing
-being able to compile a literal zero yet.
+`FALSE` stands in for the zero high half of a double in those lists: `TOKEN`
+emits one cell, so a built-in list cannot carry a literal the way a compiled
+definition does.
 
 `.` and `U.` print a trailing space. `.R` and `U.R` pad on the left and print
 nothing extra; a number already wider than the field is printed in full,
@@ -108,8 +118,8 @@ name rather than after it, so no line ends in one and none runs past the width.
 `test/cases/output.sh`, which feeds the binary Forth source and compares the
 bytes that come out: what each word prints, what a number looks like in each
 `BASE`, and what `.S` shows. The `WORDS` cases are the exception — the
-dictionary grows with every ticket, so they ask whether one name is in the list
-rather than comparing the list. See [testing.md](testing.md).
+dictionary grows whenever a word is added, so they ask whether one name is in
+the list rather than comparing the list. See [testing.md](testing.md).
 
 Errors do not come this way. They go to file descriptor 2 through
 `write_stderr`, and what each one says is in

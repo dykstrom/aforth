@@ -5,6 +5,7 @@
 
 BIN_NAME := aforth
 SRC_DIR  := src
+LIB_DIR  := lib
 BUILD    := build
 TEST_DIR := test
 
@@ -27,9 +28,14 @@ OBJS := $(SRCS:$(SRC_DIR)/%.S=$(BUILD)/%.o)
 DEPS := $(OBJS:.o=.d)
 BIN  := $(BUILD)/$(BIN_NAME)
 
+# The system file, staged beside the binary. Cold start finds it by the
+# executable's own path, so it has to be next to the binary rather than next to
+# the source. See docs/system/startup.md.
+SYSFILE := $(BUILD)/$(BIN_NAME).f
+
 .PHONY: all run test bench clean docker-test docker-bench
 
-all: $(BIN)
+all: $(BIN) $(SYSFILE)
 
 # The library goes after the objects: a shared library named before the objects
 # that need it satisfies nothing, and the Linux linker then drops it.
@@ -39,16 +45,19 @@ $(BIN): $(OBJS)
 $(BUILD)/%.o: $(SRC_DIR)/%.S | $(BUILD)
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
+$(SYSFILE): $(LIB_DIR)/$(BIN_NAME).f | $(BUILD)
+	cp $< $@
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
-run: $(BIN)
+run: all
 	./$(BIN)
 
 # The flags go to the suite because it has to know what is in the binary: the
 # build without the stack guards has no guard to fire, so the cases that expect
 # a guard's message are skipped there rather than failing.
-test: $(BIN)
+test: all
 	AFORTH_ASFLAGS='$(ASFLAGS)' $(TEST_DIR)/run-tests.sh ./$(BIN)
 
 # The benchmark. Not part of test, which has to stay fast: one run of bench is
@@ -70,9 +79,12 @@ BENCH_ITERS  := 200000000
 BENCH_REPS   := 7
 BENCH_POINTS := 2
 
-bench: $(BIN)
+# --no-init goes here rather than in run-bench.sh, which runs whatever command
+# it is handed: the point of that harness is to time aforth against arm64th and
+# SwiftForth, and neither of those understands the flag.
+bench: all
 	$(TEST_DIR)/bench/run-bench.sh -f $(BENCH_FILE) -n $(BENCH_ITERS) \
-	  -r $(BENCH_REPS) -p $(BENCH_POINTS) ./$(BIN)
+	  -r $(BENCH_REPS) -p $(BENCH_POINTS) './$(BIN) --no-init'
 
 # Linux/ARM64 build and test, per the portability goal.
 docker-test:

@@ -28,6 +28,12 @@ name lookup returns when it finds nothing.
 The name is not cell-aligned, and nothing reads it a cell at a time: a
 character is a byte, so comparison is byte by byte.
 
+Three routines work out where the code field starts from the name's length:
+`dict_find`, `header_impl` and `RECURSE`. All three use the `CFOFF` macro in
+`dict.h`, which is the arithmetic the `HEADER` macro does at assembly time.
+Write `CFOFF` rather than the arithmetic, so that a fourth copy cannot drift
+from the other three.
+
 ## Dispatch
 
 `NEXT` reads the next token, adds `DBASE` to reach the code field, reads the
@@ -50,8 +56,8 @@ word. `DOCON` and `DOVAR` are the other two code fields, for a word made by
 
 `F_IMMEDIATE` and `F_HIDDEN` are both read by then. The outer interpreter runs
 an immediate word rather than compiling it, and `dict_find` walks past a hidden
-one — which is what `(STOP)`, `(LIT)`, `(BRANCH)` and `(0BRANCH)` are, and what
-a definition is between `:` and `;`.
+one — which is what `(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)` and `(S")` are,
+and what a definition is between `:` and `;`.
 
 ## Adding a word
 
@@ -93,20 +99,19 @@ The declared length is the length of the name, not of the string that spells
 it, so `."` is 2 and `\` is 1. A wrong count is a build error rather than a
 corrupt entry, so this is a thing to get wrong once.
 
-The coverage check in `test/run-tests.sh` reads these names out of the sources,
-and it undoes only one escape: a doubled backslash. It cuts a name that escapes
-a double quote short at the escape, and then reports that word as uncovered
-however its case is written. The backslash works today because its escape is
-the one the check knows. Fix the extraction when the first word with a quote in
-its name lands.
+The coverage check in `test/run-tests.sh` reads these names out of the sources
+and undoes both escapes, so a name holding a quote reaches it whole. See
+[testing.md](testing.md), which also has the one name that check cannot really
+see.
 
 Five rules govern them.
 
 - **Name the routine in `AFORTH_PRIM_LIST` first.** That list in `dict.h`
   assigns every code-field routine its index and drives `machine_build_xtab`, so
-  a name in it must exist as `prim_<name>` somewhere or the link fails. Append to
-  it, never insert: a code field holds an index, so renumbering changes the
-  meaning of every image already written.
+  a name in it must exist as `prim_<name>` somewhere or the link fails. The
+  order is free to change today, because every code field in the image is
+  assembled from the list in the same pass; it stops being free once aforth can
+  save a dictionary, a saved code field holding an index.
 - **Give the word its stack effect.** On the defining line, as above.
 - **Declare the name's length.** Two assembly-time checks catch a wrong one, so
   a mistake is a build error rather than a corrupt entry.
@@ -129,21 +134,26 @@ The entries are in `src/words/`, one file per kind of word, and
 | `arithmetic.S` | the arithmetic, the mixed precision, the logic, the comparisons, and `udiv128` |
 | `memory.S` | `@ ! C@ C!` and the rest that address memory, and `HERE UNUSED ALLOT , C, ALIGN` with the two routines that move the allocation pointer |
 | `output.S` | everything that prints, and the pictured output routines |
-| `input.S` | `SOURCE >IN REFILL ACCEPT KEY` |
+| `input.S` | `SOURCE >IN SOURCE-ID REFILL ACCEPT KEY EVALUATE`, and the input source stack |
 | `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl` |
-| `compile.S` | `CREATE : ; IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VARIABLE`, and `header_impl` |
+| `file.S` | `R/O OPEN-FILE CLOSE-FILE READ-FILE READ-LINE FILE-SIZE FILE-POSITION REPOSITION-FILE FILE-STATUS`, and `INCLUDE-FILE INCLUDED INCLUDE` with `include_impl` under them |
+| `compile.S` | `CREATE : ; IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VARIABLE`, the string literals `S"` and `."`, and `header_impl` |
 | `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE`, and the routines that write a branch distance |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
-Include order is definition order, so a word may only compile a token from a
-file above its own. The fragments cannot be assembled on their own; the
-Makefile's glob is `src/*.S` and does not reach into `src/words/`.
+The table is in include order, and include order is definition order: a word
+may only compile a token from a file above its own. That is why `parsing.S`
+comes before `file.S` — `INCLUDE` is `PARSE-NAME` and `INCLUDED`. The fragments
+cannot be assembled on their own; the Makefile's glob is `src/*.S` and does not
+reach into `src/words/`.
 
-`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)`, `(LIT)`, `(BRANCH)` and
-`(0BRANCH)` stay in `src/interpreter.S`. They are the inner interpreter rather
-than words a program reaches for. The last three are hidden for the same
-reason: each reads a cell out of the list it is running, so a programmer who
-typed one would push or jump by whatever token came next.
+`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)`, `(LIT)`, `(BRANCH)`,
+`(0BRANCH)` and `(S")` stay in `src/interpreter.S`. They are the inner
+interpreter rather than words a program reaches for. The last four are hidden
+for the same reason: each reads something out of the list it is running, so a
+programmer who typed one would push, jump or print by whatever came next.
+`(S")` reads a count and then that many bytes rather than one cell; the shape
+is in [compiling.md](compiling.md).
 
 Nothing else may go into `SECTION_RODATA` between `DICT_BEGIN` and `DICT_END`,
 and that now means inside any of the files in `src/words/`. The image is
@@ -171,9 +181,10 @@ the bottom of the stack, so the deepest item lives at `S0 - 16`, not `S0 - 8`.
 
 Every word is tested from Forth source, by `test/run-tests.sh` feeding the built
 binary and comparing what comes out. A new word needs a case in the file of
-`test/cases/` its kind names, and a line in `test/cases/guards.sh` if it reads a
-stack. See [testing.md](testing.md), which also lists eight ways a case passes
-while testing nothing.
+`test/cases/` its kind names, and one or two lines in `test/cases/guards.sh`: a
+depth case if it reads a stack, and a room case if it pushes onto one. A word
+that does both needs both. See [testing.md](testing.md), which also lists eight
+ways a case passes while testing nothing.
 
 
 ## Start-up
@@ -206,6 +217,10 @@ assembler building that file has. See
 `(STOP)` is hidden, so name lookup will not find it. A programmer who compiled
 it into a definition would unwind the outer interpreter from under it.
 
-Only one level of `aforth_enter` is open at a time. `UV_STOP_SP` is a single
-cell, so entering the machine from inside it would lose the outer frame, and
-nothing does.
+`aforth_enter` nests. Each entry saves two things in its own frame: the
+`UV_STOP_SP` the entry below it left, so that one cell is really the top of a
+stack, and `IP`, because the entry below it is part of the way through a token
+list and this one is about to point `IP` at another. `EVALUATE` is what needs
+both — it interprets from inside a word — and [input.md](input.md) has the
+whole of why. Nothing else is saved: the stacks are shared on purpose and `W` is
+scratch.

@@ -78,6 +78,32 @@
 #  define T_ECHO             0x8
 #endif
 
+// errno, which a file word reports as its ior.
+//
+// It is a macro over a function that hands back a pointer to the int, and the
+// function differs: __error on macOS, __errno_location on Linux. The assembler
+// symbol is spelled out here rather than written through CSYM, because CSYM
+// pastes its argument and would not expand a macro handed to it.
+#if defined(__APPLE__)
+#  define ERRNO_FN ___error
+#else
+#  define ERRNO_FN __errno_location
+#endif
+
+// The two errno values aforth produces itself instead of reading one back from
+// libc: a path too long to copy before open sees it, and a file position no
+// off_t could hold.
+//
+// Only the first differs between the platforms, as ICANON above does. EINVAL is
+// 22 on both, and so are the two the file cases assert as plain numbers, ENOENT
+// at 2 and EBADF at 9. It is named here anyway, beside the one it is used with.
+#if defined(__APPLE__)
+#  define ENAMETOOLONG 63
+#else
+#  define ENAMETOOLONG 36
+#endif
+#define EINVAL 22
+
 // Load the address of a local symbol into a register, position-independent.
 // The two toolchains spell the low-bits relocation differently.
 .macro  adr_sym reg, sym
@@ -87,6 +113,64 @@
 #else
         adrp    \reg, \sym
         add     \reg, \reg, :lo12:\sym
+#endif
+.endm
+
+// The path of the running executable, which cold start needs to find the
+// system file beside the binary rather than in the working directory.
+//
+// This is the one difference the init files add, and it is a whole routine
+// rather than a constant, so the macro defines the routine and src/machine.S
+// instantiates it once in its text section. A second instantiation would be a
+// duplicate symbol, which is the right way to be told about it.
+//
+// exec_path_raw takes a buffer in x0 and its size in x1, terminates the path in
+// it, and returns 0 or -1. The two platforms answer differently in both shape
+// and quality: macOS hands back the path as the process was invoked, so it may
+// be relative or run through a symlink, while Linux resolves /proc/self/exe
+// already. exec_path in src/machine.S puts both through realpath so that the
+// caller sees one kind of answer.
+//
+// _NSGetExecutablePath returns an int and takes its buffer size as a pointer to
+// a uint32_t, which is why the size is stored as a word. readlink returns an
+// ssize_t and writes no terminator, so this one adds it.
+.macro  exec_path_raw_def
+#if defined(__APPLE__)
+        .p2align        2
+exec_path_raw:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     w1, [sp, #16]           // the size, as the uint32_t it takes
+        add     x1, sp, #16
+        bl      CSYM(_NSGetExecutablePath)
+        sxtw    x0, w0                  // an int, so only w0 is ours
+        ldp     x29, x30, [sp], #32
+        ret
+#else
+        SECTION_RODATA
+        .p2align        3
+exec_path_link:
+        .asciz  "/proc/self/exe"
+
+        .text
+        .p2align        2
+exec_path_raw:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     x0, [sp, #16]           // the buffer, across the call
+        sub     x2, x1, #1              // room for the terminator
+        mov     x1, x0
+        adr_sym x0, exec_path_link
+        bl      CSYM(readlink)
+        cmp     x0, #0
+        b.le    1f                      // -1, or a link with nothing in it
+        ldr     x1, [sp, #16]
+        strb    wzr, [x1, x0]
+        mov     x0, #0
+        b       2f
+1:      mov     x0, #-1
+2:      ldp     x29, x30, [sp], #32
+        ret
 #endif
 .endm
 

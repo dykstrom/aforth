@@ -31,6 +31,20 @@ spaces_run:
 str_empty:
         .asciz  ""
 
+// The pieces the two cold-start paths are built from. The environment
+// variables are ADR 0003's, and both file names carry the .f extension the
+// design goals require of Forth source.
+str_system_file:
+        .asciz  "aforth.f"
+str_xdg_config_home:
+        .asciz  "XDG_CONFIG_HOME"
+str_home:
+        .asciz  "HOME"
+str_dot_config:
+        .asciz  "/.config"
+str_init_file:
+        .asciz  "/aforth/init.f"
+
         .text
 
 // Allocate and carve the region, and set the machine registers.
@@ -102,6 +116,12 @@ machine_init:
         add     x1, x0, #PAD_OFF
         str     x1, [UP, #UV_PAD]
 
+        // The transient string buffers start empty and the first interpreted
+        // S" takes the first of them.
+        add     x1, x0, #SBUF_OFF
+        str     x1, [UP, #UV_SBUF]
+        str     x1, [UP, #UV_SBUF_NEXT]
+
         // The only real code address aforth writes anywhere. It is allowed
         // because the user area is not the dictionary, which ADR 0005 requires
         // to hold none. When warm start lands it must rewrite this cell on
@@ -121,6 +141,10 @@ machine_init:
 
         str     xzr, [UP, #UV_ERR_ADDR]
         str     xzr, [UP, #UV_ERR_LEN]
+
+        // The terminal is the source at the bottom, with nothing under it.
+        str     xzr, [UP, #UV_SOURCE_ID]
+        str     xzr, [UP, #UV_SRC_DEPTH]
 
         // Deterministic; the machine overwrites all three as soon as it runs.
         mov     IP, #0
@@ -150,57 +174,512 @@ init_failed:
 // reports it, empties the stacks and reads the next line.
         .p2align        2
         .globl  ds_underflow
+        FUNC_TYPE(ds_underflow)
 ds_underflow:
         mov     x0, #ERR_DS_UNDERFLOW
         b       machine_error
+        FUNC_SIZE(ds_underflow)
 
         .globl  ds_overflow
+        FUNC_TYPE(ds_overflow)
 ds_overflow:
         mov     x0, #ERR_DS_OVERFLOW
         b       machine_error
+        FUNC_SIZE(ds_overflow)
 
         .globl  rs_underflow
+        FUNC_TYPE(rs_underflow)
 rs_underflow:
         mov     x0, #ERR_RS_UNDERFLOW
         b       machine_error
+        FUNC_SIZE(rs_underflow)
 
         .globl  rs_overflow
+        FUNC_TYPE(rs_overflow)
 rs_overflow:
         mov     x0, #ERR_RS_OVERFLOW
         b       machine_error
+        FUNC_SIZE(rs_overflow)
 
         .globl  div_zero
+        FUNC_TYPE(div_zero)
 div_zero:
         mov     x0, #ERR_DIV_ZERO
         b       machine_error
+        FUNC_SIZE(div_zero)
 
         .globl  hold_overflow
+        FUNC_TYPE(hold_overflow)
 hold_overflow:
         mov     x0, #ERR_HOLD_OVERFLOW
         b       machine_error
+        FUNC_SIZE(hold_overflow)
 
-        .globl  line_too_long
-line_too_long:
-        mov     x0, #ERR_LINE_TOO_LONG
-        b       machine_error
-
-// The one error that names something. The name is at x0, x1 bytes long, and it
-// goes in the user area for machine_quit to print after the message. Both the
-// outer interpreter and ' come through here, so both say the same thing.
+// Remember the name an error names. It is at x0, x1 bytes long, and it goes in
+// the user area for machine_quit to print after the message.
 //
 // The name points into the input buffer, which the next REFILL overwrites. The
 // message is written before that happens, so the two never race.
-        .globl  undefined_word
-undefined_word:
+        .globl  err_name
+        FUNC_TYPE(err_name)
+err_name:
         str     x0, [UP, #UV_ERR_ADDR]
         str     x1, [UP, #UV_ERR_LEN]
+        ret
+        FUNC_SIZE(err_name)
+
+// Remember it and raise the undefined word on it. ' comes through here.
+//
+// interpret_source does not: it calls err_name and returns the number, because
+// it runs outside aforth_enter when the loop calls it and inside one when
+// EVALUATE does, and a raise is wrong in both. See docs/system/input.md.
+//
+// The bl clobbers x30, which costs nothing: this never returns.
+        .globl  undefined_word
+        FUNC_TYPE(undefined_word)
+undefined_word:
+        bl      err_name
         mov     x0, #ERR_UNDEFINED_WORD
         b       machine_error
+        FUNC_SIZE(undefined_word)
 
         .globl  machine_error
+        FUNC_TYPE(machine_error)
 machine_error:
         ldr     x9, [UP, #UV_ABORT]
         br      x9
+        FUNC_SIZE(machine_error)
+
+// Reading a file.
+//
+// The four routines below are the ones that reach libc, as read_line and
+// write_stdout are; the words that call them are in src/words/file.S and the
+// whole picture is in docs/system/files.md.
+//
+// A fileid is the descriptor open returned and an ior is an errno, so none of
+// these raises: a file word reports what went wrong on the stack and the
+// program decides. Nothing here holds a buffer or a position of its own. The
+// kernel's file position is the only one there is (ADR 0007).
+//
+// open, close and access return an int, so their result arrives in w0 and the
+// top half of x0 is undefined. Each is sign-extended with sxtw before anything
+// compares it against -1, because the two platforms leave different rubbish up
+// there: macOS happened to sign-extend and Linux zeroed, which made a failed
+// access read as 4294967295 rather than -1. read and lseek need none of this,
+// returning ssize_t and off_t, which fill the register.
+
+// The last errno. What a file word hands back as its ior.
+        .p2align        2
+        .globl  errno_value
+        FUNC_TYPE(errno_value)
+errno_value:
+        stp     x29, x30, [sp, #-16]!
+        mov     x29, sp
+        bl      ERRNO_FN
+        ldr     w0, [x0]
+        ldp     x29, x30, [sp], #16
+        ret
+        FUNC_SIZE(errno_value)
+
+// Open the file named by the string at x0, x1 bytes long, with the flag word in
+// x2. Returns the descriptor in x0 and an ior in x1, or -1 and the errno.
+//
+// The name is copied into this frame and terminated there, because open takes a
+// C string and a Forth string has no terminator after it. A name too long for
+// the frame is ENAMETOOLONG without asking the kernel.
+//
+// open is the first variadic libc function aforth calls, and it is safe to call
+// because only its two named arguments are passed. Apple's ABI puts a variadic
+// argument on the stack and the Linux AAPCS puts it in a register, so a call
+// that passed one would need different code per platform; a call that passes
+// none is the same instruction sequence on both. See docs/system/files.md.
+        .p2align        2
+        .globl  file_open
+        FUNC_TYPE(file_open)
+file_open:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        sub     sp, sp, #PATH_BUF
+        str     x2, [x29, #16]          // the flag word, across the copy
+        mov     x2, sp                  // the frame's own buffer
+        bl      path_copy
+        cbnz    x0, fo_name
+
+        mov     x0, sp
+        ldr     x1, [x29, #16]
+        bl      CSYM(open)
+        sxtw    x0, w0                  // an int, so only w0 is meaningful
+        cmn     x0, #1
+        b.eq    fo_failed
+        mov     x1, #0
+        b       fo_done
+
+fo_failed:
+        bl      errno_value
+        mov     x1, x0
+        mov     x0, #-1
+        b       fo_done
+
+fo_name:
+        mov     x1, x0                  // ENAMETOOLONG
+        mov     x0, #-1
+
+fo_done:
+        add     sp, sp, #PATH_BUF
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(file_open)
+
+// Copy the string at x0, x1 bytes long, to the buffer at x2 and terminate it
+// there. Returns 0, or ENAMETOOLONG when the name does not fit PATH_BUF.
+//
+// Both open and access take a C string, and a Forth string has no terminator
+// after it. The caller carves the buffer in its own frame; this only fills it.
+        .p2align        2
+        .globl  path_copy
+        FUNC_TYPE(path_copy)
+path_copy:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        cmp     x1, #(PATH_BUF - 1)
+        b.hi    pc_too_long
+
+        str     x1, [sp, #16]           // the length, across the call
+        mov     x3, x0                  // the name
+        mov     x0, x2                  // where it goes
+        mov     x2, x1                  // how many bytes
+        mov     x1, x3
+        bl      CSYM(memcpy)
+        ldr     x1, [sp, #16]
+        strb    wzr, [x0, x1]           // memcpy hands the destination back
+        mov     x0, #0
+        ldp     x29, x30, [sp], #32
+        ret
+
+pc_too_long:
+        mov     x0, #ENAMETOOLONG
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(path_copy)
+
+// Is the file named by the string at x0, x1 bytes long, there? Returns an ior
+// in x0, which is 0 when it is.
+//
+// access asks the one question FILE-STATUS has to answer and needs no struct
+// stat, whose layout differs between the platforms.
+        .p2align        2
+        .globl  file_status
+        FUNC_TYPE(file_status)
+file_status:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        sub     sp, sp, #PATH_BUF
+        mov     x2, sp
+        bl      path_copy
+        cbnz    x0, fst_done            // ENAMETOOLONG is the ior
+
+        mov     x0, sp
+        mov     x1, #0                  // F_OK: is it there at all
+        bl      CSYM(access)
+        sxtw    x0, w0
+        cmn     x0, #1
+        b.ne    fst_done                // 0, and so the ior
+        bl      errno_value
+
+fst_done:
+        add     sp, sp, #PATH_BUF
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(file_status)
+
+// Read x2 bytes from descriptor x0 into x1. Returns how many in x0 and an ior
+// in x1.
+//
+// read is called again until the buffer is full or it returns 0, so fewer bytes
+// than asked for means the file ended rather than that one read came up short.
+// READ-LINE depends on that: a short read with no newline in it would otherwise
+// look like an unterminated last line.
+        .p2align        2
+        .globl  file_read
+        FUNC_TYPE(file_read)
+file_read:
+        stp     x29, x30, [sp, #-48]!
+        mov     x29, sp
+        stp     x0, x1, [sp, #16]       // the descriptor and the buffer
+        stp     x2, xzr, [sp, #32]      // how many are wanted, and how many so far
+
+1:      ldp     x2, x3, [sp, #32]
+        subs    x2, x2, x3              // how many are still wanted
+        b.ls    fr_done
+        ldr     x0, [sp, #16]
+        ldr     x1, [sp, #24]
+        add     x1, x1, x3
+        bl      CSYM(read)
+        cmn     x0, #1
+        b.eq    fr_failed
+        cbz     x0, fr_done             // the file ended
+        ldr     x3, [sp, #40]
+        add     x3, x3, x0
+        str     x3, [sp, #40]
+        b       1b
+
+fr_done:
+        ldr     x0, [sp, #40]
+        mov     x1, #0
+        ldp     x29, x30, [sp], #48
+        ret
+
+fr_failed:
+        bl      errno_value
+        mov     x1, x0
+        ldr     x0, [sp, #40]           // whatever arrived before the error
+        ldp     x29, x30, [sp], #48
+        ret
+        FUNC_SIZE(file_read)
+
+// Move descriptor x0 by the offset in x1, measured from x2. Returns the new
+// position in x0 and an ior in x1.
+        .p2align        2
+        .globl  file_seek
+        FUNC_TYPE(file_seek)
+file_seek:
+        stp     x29, x30, [sp, #-16]!
+        mov     x29, sp
+        bl      CSYM(lseek)
+        cmn     x0, #1
+        b.eq    fs_failed
+        mov     x1, #0
+        ldp     x29, x30, [sp], #16
+        ret
+
+fs_failed:
+        bl      errno_value
+        mov     x1, x0
+        mov     x0, #-1
+        ldp     x29, x30, [sp], #16
+        ret
+        FUNC_SIZE(file_seek)
+
+// Close descriptor x0. Returns an ior in x0.
+        .p2align        2
+        .globl  file_close
+        FUNC_TYPE(file_close)
+file_close:
+        stp     x29, x30, [sp, #-16]!
+        mov     x29, sp
+        bl      CSYM(close)
+        sxtw    x0, w0
+        cmn     x0, #1
+        b.eq    fc_failed
+        mov     x0, #0
+        ldp     x29, x30, [sp], #16
+        ret
+
+fc_failed:
+        bl      errno_value
+        ldp     x29, x30, [sp], #16
+        ret
+        FUNC_SIZE(file_close)
+
+// The two paths cold start reads.
+//
+// Neither is opened here: these only build a name, and cold_start in
+// src/aforth.S decides what to do with it. Each fills a buffer the caller
+// carves, PATH_BUF bytes long, the way path_copy does, and returns the length
+// or -1. See docs/system/startup.md.
+        exec_path_raw_def
+
+// The path of the running executable, resolved. Returns its length in x0, or
+// -1 when the platform would not say.
+//
+// realpath runs on both platforms although only macOS needs it: it is what
+// makes ./build/aforth answer as an absolute path, and what makes an installed
+// binary reached through a symlink look for its system file beside the real one
+// rather than beside the link. Linux resolves /proc/self/exe already, so there
+// it costs one call and changes nothing.
+//
+// realpath wants somewhere at least PATH_MAX bytes long, which PATH_BUF is on
+// both platforms: 1024 on macOS and 4096 on Linux.
+        .p2align        2
+        .globl  exec_path
+        FUNC_TYPE(exec_path)
+exec_path:                              // x0 buffer -> x0 length, or -1
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        sub     sp, sp, #PATH_BUF
+        str     x0, [x29, #16]          // where the answer goes
+
+        mov     x0, sp                  // the path as the process was invoked
+        mov     x1, #PATH_BUF
+        bl      exec_path_raw
+        cmn     x0, #1
+        b.eq    ep_failed
+
+        mov     x0, sp
+        ldr     x1, [x29, #16]
+        bl      CSYM(realpath)
+        cbz     x0, ep_failed
+        bl      CSYM(strlen)
+        b       ep_done
+
+ep_failed:
+        mov     x0, #-1
+
+ep_done:
+        add     sp, sp, #PATH_BUF
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(exec_path)
+
+// Append the NUL-terminated string at x1 to the buffer at x0, which holds x2
+// bytes already, and terminate it. Returns the new length, or -1 when the
+// result would not fit PATH_BUF.
+//
+// A path is built one piece at a time here rather than with strcat, which would
+// walk what is already there again for every piece and would check nothing.
+        .p2align        2
+        .globl  path_append
+        FUNC_TYPE(path_append)
+path_append:                            // x0 buffer, x1 string, x2 length
+        stp     x29, x30, [sp, #-48]!
+        mov     x29, sp
+        stp     x0, x1, [sp, #16]       // the buffer and what goes on the end
+        str     x2, [sp, #32]           // what is in the buffer now
+
+        mov     x0, x1
+        bl      CSYM(strlen)
+        ldr     x2, [sp, #32]
+        add     x3, x2, x0
+        cmp     x3, #(PATH_BUF - 1)
+        b.hi    pa_too_long
+        str     x3, [sp, #40]           // what it will be
+
+        add     x2, x0, #1              // the terminator goes with it
+        ldp     x0, x1, [sp, #16]
+        ldr     x3, [sp, #32]
+        add     x0, x0, x3              // one past what is there
+        bl      CSYM(memcpy)
+        ldr     x0, [sp, #40]
+        b       pa_done
+
+pa_too_long:
+        mov     x0, #-1
+
+pa_done:
+        ldp     x29, x30, [sp], #48
+        ret
+        FUNC_SIZE(path_append)
+
+// The system file that ships with aforth: the directory the binary is in, and
+// aforth.f. Returns its length in x0, or -1.
+//
+// Beside the binary rather than in the working directory, so that a session
+// started anywhere has the same dictionary, and so that build/aforth finds
+// build/aforth.f while an installed binary finds its own neighbour. It is never
+// read from the current directory, which ADR 0003 forbids for the user's file
+// and which would be no safer for this one.
+        .p2align        2
+        .globl  system_file_path
+        FUNC_TYPE(system_file_path)
+system_file_path:                       // x0 buffer -> x0 length, or -1
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     x0, [sp, #16]
+
+        bl      exec_path
+        cmn     x0, #1
+        b.eq    sfp_failed
+
+        // Back over the last component, keeping the slash. A path with no
+        // slash in it at all leaves 0, and the name is then relative to the
+        // working directory, which is the best that can be said about it.
+        ldr     x1, [sp, #16]
+        mov     x2, x0
+1:      cbz     x2, 2f
+        sub     x3, x2, #1
+        ldrb    w4, [x1, x3]
+        cmp     w4, #47                 // a slash
+        b.eq    2f
+        mov     x2, x3
+        b       1b
+
+        // x2 is the length of the directory part, which is what path_append
+        // wants as the length already in the buffer.
+2:      mov     x0, x1
+        adr_sym x1, str_system_file
+        bl      path_append
+        b       sfp_done
+
+sfp_failed:
+        mov     x0, #-1
+
+sfp_done:
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(system_file_path)
+
+// The user's own init file: $XDG_CONFIG_HOME/aforth/init.f, or
+// $HOME/.config/aforth/init.f when that variable is unset or empty. Returns its
+// length in x0, or -1 when neither variable says where the user's files are.
+//
+// One path on both platforms, which is what ADR 0003 decided: a terminal
+// program gains nothing from ~/Library/Application Support on macOS, and the
+// XDG directory leaves room for the files that come later.
+        .p2align        2
+        .globl  user_init_path
+        FUNC_TYPE(user_init_path)
+user_init_path:                         // x0 buffer -> x0 length, or -1
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        str     x0, [sp, #16]
+
+        adr_sym x0, str_xdg_config_home
+        bl      CSYM(getenv)
+        cbz     x0, uip_home
+        ldrb    w1, [x0]
+        cbz     w1, uip_home            // set to nothing is as good as unset
+
+        mov     x1, x0
+        ldr     x0, [sp, #16]
+        mov     x2, #0
+        bl      path_append
+        b       uip_tail
+
+uip_home:
+        adr_sym x0, str_home
+        bl      CSYM(getenv)
+        cbz     x0, uip_failed
+        ldrb    w1, [x0]
+        cbz     w1, uip_failed
+
+        mov     x1, x0
+        ldr     x0, [sp, #16]
+        mov     x2, #0
+        bl      path_append
+        cmn     x0, #1
+        b.eq    uip_failed
+
+        mov     x2, x0
+        ldr     x0, [sp, #16]
+        adr_sym x1, str_dot_config
+        bl      path_append
+
+uip_tail:
+        cmn     x0, #1
+        b.eq    uip_failed
+        mov     x2, x0
+        ldr     x0, [sp, #16]
+        adr_sym x1, str_init_file
+        bl      path_append
+        b       uip_done
+
+uip_failed:
+        mov     x0, #-1
+
+uip_done:
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(user_init_path)
 
 // Write x1 bytes at x0 to file descriptor 1.
 //
@@ -210,6 +689,7 @@ machine_error:
 // order the words made them. See docs/system/output.md.
         .p2align        2
         .globl  write_stdout
+        FUNC_TYPE(write_stdout)
 write_stdout:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
@@ -219,6 +699,7 @@ write_stdout:
         bl      CSYM(write)
         ldp     x29, x30, [sp], #16
         ret
+        FUNC_SIZE(write_stdout)
 
 // Write the NUL-terminated string at x0 to file descriptor 1, then a newline.
 //
@@ -228,6 +709,7 @@ write_stdout:
 // that print one character build theirs too.
         .p2align        2
         .globl  puts_stdout
+        FUNC_TYPE(puts_stdout)
 puts_stdout:
         stp     x29, x30, [sp, #-32]!
         mov     x29, sp
@@ -243,6 +725,7 @@ puts_stdout:
         bl      write_stdout
         ldp     x29, x30, [sp], #32
         ret
+        FUNC_SIZE(puts_stdout)
 
 // Write x0 spaces to file descriptor 1, and nothing at all when x0 is zero or
 // less.
@@ -258,6 +741,7 @@ puts_stdout:
 // keeping in x27 or x28.
         .p2align        2
         .globl  write_spaces
+        FUNC_TYPE(write_spaces)
 write_spaces:
         stp     x29, x30, [sp, #-32]!
         mov     x29, sp
@@ -275,6 +759,7 @@ write_spaces:
         b       1b
 2:      ldp     x29, x30, [sp], #32
         ret
+        FUNC_SIZE(write_spaces)
 
 // Read one line into the caller's buffer.
 //
@@ -291,6 +776,7 @@ write_spaces:
 // longer than the input buffer from one that just fills it.
         .p2align        2
         .globl  read_line
+        FUNC_TYPE(read_line)
 read_line:
         stp     x29, x30, [sp, #-64]!
         mov     x29, sp
@@ -331,6 +817,7 @@ rl_eof:
         mov     x0, #-1
         ldp     x29, x30, [sp], #64
         ret
+        FUNC_SIZE(read_line)
 
 // Read one byte, which is the character KEY returns. Returns it in x0, or -1
 // at end of input.
@@ -344,6 +831,7 @@ rl_eof:
 // 112, which leaves room for the larger of the two platforms' structs.
         .p2align        2
         .globl  read_byte
+        FUNC_TYPE(read_byte)
 read_byte:
         stp     x29, x30, [sp, #-192]!
         mov     x29, sp
@@ -351,7 +839,7 @@ read_byte:
         mov     x0, #0                  // fd 0
         add     x1, sp, #32
         bl      CSYM(tcgetattr)
-        cbnz    x0, rb_plain
+        cbnz    w0, rb_plain            // an int: only w0 is meaningful
 
         add     x0, sp, #112
         add     x1, sp, #32
@@ -401,6 +889,7 @@ rb_eof:
         mov     x0, #-1
         ldp     x29, x30, [sp], #192
         ret
+        FUNC_SIZE(read_byte)
 
 // Write a NUL-terminated message to file descriptor 2.
 //
@@ -413,6 +902,7 @@ rb_eof:
 // them would make that promise worthless.
         .p2align        2
         .globl  write_stderr
+        FUNC_TYPE(write_stderr)
 write_stderr:
         stp     x29, x30, [sp, #-32]!
         mov     x29, sp
@@ -424,3 +914,4 @@ write_stderr:
         bl      CSYM(write)
         ldp     x29, x30, [sp], #32
         ret
+        FUNC_SIZE(write_stderr)

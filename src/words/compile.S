@@ -10,9 +10,9 @@
 // so a dictionary grown here holds no more absolute addresses than the image
 // it grew from (ADR 0005).
 //
-// The compiling half of the interpret loop is machine_quit in src/outer.S: it
-// reads STATE and compiles a token instead of running it. Nothing here loops,
-// so nothing here needs the control flow ticket 011 brings.
+// The compiling half of the interpret loop is interpret_source in src/outer.S:
+// it reads STATE and compiles a token instead of running it. The words that
+// branch inside a definition are in src/words/control.S.
 //
 // See docs/system/compiling.md.
 //
@@ -42,8 +42,7 @@ header_impl:
         add     x4, x4, #7
         and     x4, x4, #-8             // an entry starts on a cell
 
-        add     x5, x1, #(ENT_NAME + 7)
-        and     x5, x5, #-8             // link, flags, count, name and pad
+        CFOFF   x5, x1                  // link, flags, count, name and pad
         add     x6, x4, x5
         add     x6, x6, #8              // one past the code field
         ldr     x7, [UP, #UV_DICT_END]
@@ -164,7 +163,7 @@ hi_full:
 // [CHAR] is CHAR and LITERAL: the first byte of the name it parses, compiled.
 // A character is a byte (ADR 0004), so the first byte of a multi-byte
 // character is what it gives, as CHAR does.
-        DEFCODE "[CHAR]", 6, bracket_char, F_IMMEDIATE  // ( "<spaces>name" -- )
+        DEFCODE "[CHAR]", 6, bracket_char, F_IMMEDIATE  // ( C: "<spaces>name" -- ) ( -- char )
         bl      parse_name_impl
         cbz     x1, 1f
         ldrb    w0, [x0]
@@ -195,3 +194,131 @@ hi_full:
         TOKEN   false
         TOKEN   comma
         ENDWORD
+
+// The two string literals.
+//
+// Both are immediate and both parse with a double quote as the delimiter,
+// starting where >IN stands. parse_name_impl has already left it just past the
+// one space that ended the word's own name, so S" ccc" takes ccc, and a
+// delimiter that comes straight away gives the empty string.
+//
+// A string whose delimiter never comes takes the rest of the line and raises
+// nothing. That is the choice ( makes, for the reason ( gives: the only line
+// aforth could read a delimiter from is the terminal's, and waiting there for
+// a quote the user does not know it wants is a trap.
+//
+// While compiling, each lays the bytes inside the definition through
+// dict_compile_string below. While interpreting, S" copies them into a
+// transient buffer and ." writes them straight out. Forth-2012 leaves the
+// interpretation semantics of both undefined in Core and defines S" 's in the
+// File-Access word set; what ." does while interpreting is aforth's own, and
+// docs/system/output.md says so.
+
+// Copy the string at x0, x1 bytes long, into the next transient buffer, and
+// return where it went in x0 with the length still in x1.
+//
+// The buffers are taken in turn, so strings made one after another do not
+// overwrite each other. Forth-2012 11.3.4 asks for at least two; aforth has
+// SBUF_COUNT of them, and machine.h says why that is four.
+//
+// A buffer is as large as the input buffer and the string was parsed out of
+// that, so the copy always fits. machine.h checks the two sizes against each
+// other at assembly time, which is why nothing is tested here.
+        .p2align        2
+sbuf_take:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+        ldr     x2, [UP, #UV_SBUF_NEXT]
+        stp     x2, x1, [sp, #16]       // where it goes and how long, across
+                                        // the call
+        add     x3, x2, #SBUF_EACH      // the buffer after it
+        ldr     x4, [UP, #UV_SBUF]
+        add     x5, x4, #SBUF_SIZE      // one past the last one
+        cmp     x3, x5
+        csel    x3, x4, x3, hs          // round robin
+        str     x3, [UP, #UV_SBUF_NEXT]
+
+        mov     x2, x1                  // how many
+        mov     x1, x0                  // from
+        ldr     x0, [sp, #16]           // to
+        bl      CSYM(memcpy)
+        ldp     x0, x1, [sp, #16]
+        ldp     x29, x30, [sp], #32
+        ret
+
+// Compile the string at x0, x1 bytes long as inline data: (S")'s token, the
+// count, the bytes, and zeroes up to the next cell.
+//
+// Returns 0, or ERR_DICT_FULL having written nothing. The room for all of it
+// is tested once, before any of it is written, which is what a run of
+// dict_comma calls could not do. It reports rather than raises for the reason
+// dict_comma does, and the words below turn the report into a raise.
+//
+// The pad is zeroed rather than left as it was, so that the same source builds
+// the same bytes, which is what header_impl does with a name's pad.
+        .p2align        2
+dict_compile_string:
+        ldr     x2, [UP, #UV_HERE]
+        add     x3, x1, #7
+        and     x3, x3, #-8             // the bytes, padded to a cell
+        add     x3, x3, #16             // the token and the count
+        add     x3, x2, x3              // where HERE ends up
+        ldr     x4, [UP, #UV_DICT_END]
+        cmp     x3, x4
+        b.hi    1f
+
+        mov     x4, #TOK_s_quote_run
+        str     x4, [x2], #8
+        str     x1, [x2], #8
+        mov     x5, x0                  // the bytes
+        mov     x6, x1                  // how many
+2:      cbz     x6, 3f
+        ldrb    w7, [x5], #1
+        strb    w7, [x2], #1
+        sub     x6, x6, #1
+        b       2b
+3:      cmp     x2, x3
+        b.hs    4f
+        strb    wzr, [x2], #1
+        b       3b
+4:      str     x3, [UP, #UV_HERE]
+        mov     x0, #0
+        ret
+
+1:      mov     x0, #ERR_DICT_FULL
+        ret
+
+        DEFCODE "S\"", 2, s_quote, F_IMMEDIATE  // ( "ccc<quote>" -- c-addr u )
+        mov     x0, #34                 // a double quote
+        bl      parse_impl
+        ldr     x2, [UP, #UV_STATE]
+        cbnz    x2, 1f
+
+        ROOM    2
+        bl      sbuf_take
+        DPUSH   x0
+        DPUSH   x1
+        NEXT
+
+1:      bl      dict_compile_string
+        RAISE
+        NEXT
+
+// ." is S" and TYPE, both while compiling and while interpreting: the same
+// bytes in the same place, and the one write TYPE already makes of them.
+        DEFCODE ".\"", 2, dot_quote, F_IMMEDIATE        // ( "ccc<quote>" -- )
+        mov     x0, #34                 // a double quote
+        bl      parse_impl
+        ldr     x2, [UP, #UV_STATE]
+        cbnz    x2, 1f
+
+        cbz     x1, 2f                  // nothing to write
+        bl      write_stdout
+2:      NEXT
+
+1:      bl      dict_compile_string
+        RAISE
+        mov     x0, #TOK_type
+        bl      dict_comma
+        RAISE
+        NEXT

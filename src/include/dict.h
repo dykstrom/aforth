@@ -44,45 +44,57 @@
 #define F_IMMEDIATE     0x01    // runs even while compiling
 #define F_HIDDEN        0x02    // name lookup walks past it
 
+// How far the code field is from the start of an entry whose name is \len
+// bytes long: past the fixed fields and the name, padded to the next cell.
+//
+// The HEADER macro below does this arithmetic at assembly time. Three routines
+// do it at run time — dict_find, header_impl and RECURSE — and all three come
+// here for it, so there is one place it can be got wrong. \dst may be \len.
+.macro  CFOFF dst, len
+        add     \dst, \len, #(ENT_NAME + 7)
+        and     \dst, \dst, #-8
+.endm
+
 // Every code-field routine, in index order.
 //
 // This list is the single source of truth. It assigns each routine its index
 // and it drives machine_build_xtab, so a name here must exist as prim_<name>
 // in some object file or the link fails.
 //
-// Append to it; do not insert. A code field in a saved dictionary holds an
-// index, so renumbering changes the meaning of every image written before it.
+// The order is free today and reordering costs nothing: an index only picks a
+// slot in the table machine_build_xtab fills, and every code field in the image
+// is assembled from this list in the same pass. It stops being free when aforth
+// can save a dictionary, because a saved code field holds an index and
+// renumbering would change what every already-written image means. Append from
+// then on.
 //
 // A label spells out the punctuation in the word's name, because a label has
 // to be a symbol: plus for +, q_dup for ?DUP, to_r for >R, r_fetch for R@,
 // two_star for 2*, less_num for <#, num_greater for #>, dot_s for .S.
 #define AFORTH_PRIM_LIST docol, exit, execute, dup, plus, stop, \
         drop, swap, over, rot, q_dup, nip, tuck, depth, \
-        two_dup, two_drop, two_swap, two_over, \
-        to_r, r_from, r_fetch, two_to_r, two_r_from, two_r_fetch, \
-        pick, roll, \
+        two_dup, two_drop, two_swap, two_over, to_r, r_from, \
+        r_fetch, two_to_r, two_r_from, two_r_fetch, pick, roll, \
         minus, star, slash, mod, slash_mod, abs, negate, min, max, \
         one_plus, one_minus, two_star, two_slash, \
         um_star, um_slash_mod, m_star, sm_slash_rem, fm_slash_mod, \
         and, or, xor, invert, lshift, rshift, \
         equals, not_equals, less, greater, u_less, u_greater, \
-        zero_equals, zero_not_equals, zero_less, zero_greater, true, false, \
-        fetch, store, c_fetch, c_store, plus_store, \
+        zero_equals, zero_not_equals, zero_less, zero_greater, \
+        true, false, fetch, store, c_fetch, c_store, plus_store, \
         cell_plus, cells, char_plus, chars, align, aligned, \
-        move, fill, erase, \
-        emit, type, cr, spaces, bl, base, decimal, hex, \
-        less_num, num, num_s, hold, sign, num_greater, dot_s, \
-        words, \
-        source, to_in, refill, accept, key, \
-        parse_name, parse, word, count, find, tick, to_number, q_number, \
-        state, abort, quit, bye, \
-        lit, docon, dovar, \
-        here, unused, allot, comma, c_comma, \
-        create, colon, semicolon, immediate, \
-        left_bracket, right_bracket, literal, bracket_char, constant, \
-        branch, zero_branch, \
+        move, fill, erase, emit, type, cr, spaces, bl, base, decimal, hex, \
+        less_num, num, num_s, hold, sign, num_greater, dot_s, words, \
+        source, to_in, refill, accept, key, parse_name, parse, word, \
+        count, find, tick, to_number, q_number, state, abort, quit, bye, \
+        lit, docon, dovar, here, unused, allot, comma, c_comma, \
+        create, colon, semicolon, immediate, left_bracket, right_bracket, \
+        literal, bracket_char, constant, branch, zero_branch, \
         if, else, then, begin, until, while, repeat, again, recurse, \
-        paren, backslash
+        paren, backslash, s_quote_run, s_quote, dot_quote, source_id, \
+        evaluate, r_o, open_file, close_file, read_file, read_line, \
+        file_size, file_position, reposition_file, file_status_word, \
+        include_file, included
 
         .set    aforth_prim_count, 0
         .irp    prim, AFORTH_PRIM_LIST
@@ -102,9 +114,9 @@
 // NEXT is a macro rather than one shared routine on purpose: every primitive
 // carries its own copy, so the indirect branch gets a branch-predictor entry
 // per word instead of one entry for the whole system. ADR 0005 expected that to
-// matter more than the extra indexed load the index code field costs, and
-// ticket 012 measured both: one shared copy is 48% slower, and the extra load
-// costs nothing a benchmark can find. See docs/system/benchmark.md.
+// matter more than the extra indexed load the index code field costs, and both
+// have been measured: one shared copy is 48% slower, and the extra load costs
+// nothing a benchmark can find. See docs/system/benchmark.md.
 //
 // Both clobber x9 and W, the same x9 the stack guards use. A primitive must be
 // finished with both before its NEXT.

@@ -18,6 +18,7 @@ RUN apt-get update \
 WORKDIR /aforth
 COPY Makefile ./
 COPY src src
+COPY lib lib
 COPY test test
 
 CMD ["make", "test"]

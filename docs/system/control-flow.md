@@ -82,9 +82,9 @@ the reason each carries a comment naming the others.
 
 ## What is not here
 
-`DO LOOP +LOOP ?DO LEAVE UNLOOP I J` were cut from the epic: a counted loop
-needs a loop-control stack, which is a second mechanism rather than more of this
-one. `CASE OF ENDOF ENDCASE` are not implemented either.
+`DO LOOP +LOOP ?DO LEAVE UNLOOP I J` are not implemented: a counted loop needs
+a loop-control stack, which is a second mechanism rather than more of this one.
+`CASE OF ENDOF ENDCASE` are not implemented either.
 
 ## Where the tests are
 

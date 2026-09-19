@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Johan Dykstrom
+# Copyright 2026 Johan Dykström
 
 # Times one or more Forth systems on a benchmark and prints a table.
 # Usage: run-bench.sh [-f FILE] [-n ITERS] [-r REPS] [-p POINTS] [COMMAND ...]

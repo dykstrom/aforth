@@ -6,16 +6,17 @@
 // Every byte aforth prints leaves through write_stdout in src/machine.S:
 // write on file descriptor 1, unbuffered. There is no buffer, so there is no
 // flushing rule and no question of what order a terminal sees things in and a
-// pipe does not. The cost is a write per character out of EMIT, which ticket
-// 012 is the place to price.
+// pipe does not. The cost is a write per character out of EMIT, and it is the
+// most expensive thing aforth does per unit of work; docs/system/benchmark.md
+// has the figure.
 //
 // A number is built in the pictured output buffer, right to left, by the words
 // Forth-2012 gives for it, and . U. .R U.R are token lists over those words
 // rather than code of their own. That is what keeps BASE honest: there is one
 // place a digit is made, and every word that prints a number goes through it.
-// .S is assembly, because it loops and there is no control flow until ticket
-// 011, but it holds its digits through the same routine. See
-// docs/system/output.md.
+// .S and WORDS are assembly, because each loops and the loop reads more easily
+// than the token list that could express it; both hold their digits through
+// the same routine. See docs/system/output.md.
 //
 // Included by src/interpreter.S between DICT_BEGIN and DICT_END. Not a
 // translation unit of its own: the entry macros track their place in the image
@@ -166,8 +167,8 @@ hold_write:
         bl      write_spaces
         NEXT
 
-// BL is a constant, and there is no CONSTANT until ticket 010, so it is shaped
-// like TRUE and FALSE above.
+// BL is a constant, but CONSTANT builds an entry at run time and this one is
+// assembled into the image, so it is shaped like TRUE and FALSE above.
         DEFCODE "BL", 2, bl             // ( -- char )
         ROOM    1
         DPUSHM
@@ -175,8 +176,8 @@ hold_write:
         NEXT
 
 // BASE is a user variable: the word pushes the address of the cell, and ! and
-// @ do the rest. DECIMAL and HEX write it without a literal, which nothing can
-// compile until ticket 010.
+// @ do the rest. DECIMAL and HEX write it in two instructions rather than as a
+// token list, a built-in list having no way to carry a literal.
         DEFCODE "BASE", 4, base         // ( -- a-addr )
         ROOM    1
         DPUSHM
@@ -359,9 +360,10 @@ hold_write:
 // none of them has a base of its own: every digit any of them prints is made
 // by # , which reads BASE.
 //
-// FALSE stands in for the zero high half of a double. There is no literal yet
-// and nothing parses a number until ticket 007, and FALSE is the cell with no
-// bits set, which is the zero a double needs above a single.
+// FALSE stands in for the zero high half of a double. TOKEN emits one cell, so
+// a built-in list cannot carry a literal the way a compiled definition does,
+// and FALSE is the cell with no bits set — the zero a double needs above a
+// single.
         DEFWORD "SPACE", 5, space       // ( -- )
         TOKEN   bl
         TOKEN   emit

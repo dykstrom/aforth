@@ -76,7 +76,8 @@
 //   0x107000  return stack            64 KiB
 //   0x117000  data stack              64 KiB
 //   0x127000  PAD                      4 KiB   slack above the data stack
-//   0x128000  end
+//   0x128000  transient strings       16 KiB   four buffers of 4 KiB
+//   0x12c000  end
 //
 // The index-to-address table is the one area whose contents are true only for
 // the process that built them. It holds addresses, so a saved image must treat
@@ -96,11 +97,41 @@
 #define DSTACK_SIZE     0x010000
 #define PAD_OFF         0x127000
 #define PAD_SIZE        0x001000
-#define REGION_SIZE     0x128000
+#define SBUF_OFF        0x128000
+#define SBUF_SIZE       0x004000
+#define REGION_SIZE     0x12c000
+
+// The transient string buffers, taken round-robin by an interpreted S" .
+//
+// Forth-2012 11.3.4 asks for at least two of them, at least 80 characters
+// each, so that two strings made one after the other are both still there.
+// aforth has four, because REGION_SIZE must stay a whole number of 16 KiB
+// pages and 16 KiB is the smallest step that keeps it one: the slack goes into
+// the count rather than into a fifth area nothing would use.
+//
+// Each is as large as the input buffer, so a string parsed out of a line
+// always fits and nothing has to be truncated or report an overflow. The check
+// below is what keeps that true if either size ever moves.
+#define SBUF_COUNT      4
+#define SBUF_EACH       (SBUF_SIZE / SBUF_COUNT)
 
 // How many spaces write_spaces writes per call to write. Wider than any field
 // a program is likely to ask .R for, so padding a number costs one write.
 #define SPACES_RUN      64
+
+// How long a path file_open will copy, its terminator included. open takes a C
+// string and a Forth string has no terminator after it, so the name is copied
+// into file_open's own frame and terminated there. PATH_MAX is 1024 on macOS
+// and 4096 on Linux, so a name this long fails in the kernel on both anyway;
+// a longer one is ENAMETOOLONG without asking.
+#define PATH_BUF        4096
+
+// How much of a file name include_impl copies into its frame, for the message
+// an error inside that file prints. The caller's bytes may sit in a transient
+// string buffer, which five interpreted S" strings inside the file would take
+// back, so the name has to be copied rather than pointed at. Only the message
+// is cut short here. file_open copies the whole path itself, up to PATH_BUF.
+#define INC_NAME_MAX    256
 
 // How many routines the table holds, which is the ceiling on the number of
 // primitives. One 16 KiB page is 2048 of them, far more than a Forth needs.
@@ -115,38 +146,94 @@
 // The sizes must tile the region exactly, and the region must be whole pages.
 // macOS/ARM64 uses 16 KiB pages, so a later save can write whole pages.
 .if (USER_AREA_SIZE + XTAB_SIZE + DICT_SIZE + TIB_SIZE + HOLD_SIZE \
-     + RSTACK_SIZE + DSTACK_SIZE + PAD_SIZE) != REGION_SIZE
+     + RSTACK_SIZE + DSTACK_SIZE + PAD_SIZE + SBUF_SIZE) != REGION_SIZE
 .error "aforth: the region areas do not sum to REGION_SIZE"
 .endif
 .if ((REGION_SIZE / 16384) * 16384) != REGION_SIZE
 .error "aforth: REGION_SIZE is not a multiple of the 16 KiB page size"
 .endif
 
-// The user area: twenty-one cells at UP.
+// A string parsed out of the input buffer must fit a transient buffer whole.
+.if SBUF_EACH < TIB_SIZE
+.error "aforth: a transient string buffer is smaller than the input buffer"
+.endif
+
+// The user area: thirty-one cells at UP, and the input source stack above
+// them.
 //
-// Start-up sets all of them. Most exist here only so that their offset is
-// fixed once; the ticket that reads each one is named.
+// machine_init sets every one of them before the machine runs, so no cell here
+// depends on the region arriving zeroed.
 #define UV_S0           0       // DSP when the data stack is empty
 #define UV_R0           8       // RSP when the return stack is empty
 #define UV_DS_LO        16      // lowest address the data stack may reach
 #define UV_RS_LO        24      // lowest address the return stack may reach
-#define UV_ABORT        32      // where a guard branches; quit_abort in 008
+#define UV_ABORT        32      // where a guard branches; quit_abort
 #define UV_DICT         40      // dictionary base, same as DBASE
-#define UV_DICT_END     48      // one past the dictionary; 010
-#define UV_HERE         56      // dictionary allocation pointer; 010
-#define UV_LATEST       64      // newest entry, an offset from DBASE; 010
-#define UV_BASE         72      // number base; 005 and 007
-#define UV_STATE        80      // 0 interpreting, -1 compiling; 008 and 010
-#define UV_TIB          88      // input buffer address; 006
-#define UV_TIB_LEN      96      // bytes in the input buffer; 006
-#define UV_TO_IN        104     // parse offset into the input buffer; 007
-#define UV_HOLD         112     // pictured output pointer; 005
-#define UV_PAD          120     // PAD address; 005
+#define UV_DICT_END     48      // one past the dictionary
+#define UV_HERE         56      // dictionary allocation pointer
+#define UV_LATEST       64      // newest entry, an offset from DBASE
+#define UV_BASE         72      // number base
+#define UV_STATE        80      // 0 interpreting, -1 compiling
+#define UV_TIB          88      // input buffer address
+#define UV_TIB_LEN      96      // bytes in the input buffer
+#define UV_TO_IN        104     // parse offset into the input buffer
+#define UV_HOLD         112     // pictured output pointer
+#define UV_PAD          120     // PAD address
 #define UV_STOP_SP      128     // C stack pointer aforth_enter returns on
 #define UV_HOLD_END     136     // one past the pictured output buffer
 #define UV_HOLD_LO      144     // lowest address the pictured output may reach
 #define UV_ERR_ADDR     152     // the name an error names, when it names one
 #define UV_ERR_LEN      160     // how long that name is; 0 for no name
+#define UV_SBUF         168     // base of the transient string buffers
+#define UV_SBUF_NEXT    176     // the buffer the next interpreted S" takes
+#define UV_SOURCE_ID    184     // 0 the terminal, -1 a string, or a fileid
+#define UV_SRC_DEPTH    192     // how many sources are stacked under this one
+#define UV_SRC_LINE     200     // which line of a file this source is on
+#define UV_SRC_NAME     208     // the name of the file, for a message
+#define UV_SRC_NAME_LEN 216     // how long that name is; 0 for no name
+#define UV_INIT_ADDR    224     // the path --init named, pointing into argv
+#define UV_INIT_LEN     232     // how long that path is; 0 for no --init
+#define UV_NO_INIT      240     // -1 when --no-init was given, 0 otherwise
+
+// The input source stack.
+//
+// UV_TIB, UV_TIB_LEN, UV_TO_IN and UV_SOURCE_ID describe the source being read
+// now. A source pushed on top of another saves those cells into a slot here and
+// installs its own, and popping puts them back. So every word that parses reads
+// the same cells it always did, and >IN hands out one fixed address however
+// deep the nesting goes — which it must, because a program may store through
+// it.
+//
+// Three more cells ride along so that an error inside an included file can say
+// where it happened. REFILL counts the lines of a file into UV_SRC_LINE, and
+// include_impl puts the name it opened in UV_SRC_NAME. A terminal or a string
+// level leaves all three at 0.
+//
+// Eight levels of seven cells is 448 bytes, which the user area holds without
+// the region changing. A source pushed on a full stack raises
+// ERR_SOURCE_TOO_DEEP.
+//
+// A string source points straight at the caller's bytes: Forth-2012 makes
+// EVALUATE's string both the input source and the input buffer, so nothing is
+// copied and no line buffer is needed. A file source cannot do that, and
+// include_impl carves its line buffer out of its own C stack frame.
+// The stack starts at 512 rather than just above the cells, so that adding a
+// user variable does not move it. The cells reach 248 now.
+#define SRC_STACK_OFF   512
+#define SRC_LEVELS      8
+#define SRC_SLOT        56
+
+#define SRC_TIB         0
+#define SRC_TIB_LEN     8
+#define SRC_TO_IN       16
+#define SRC_ID          24
+#define SRC_LINE        32
+#define SRC_NAME        40
+#define SRC_NAME_LEN    48
+
+.if (SRC_STACK_OFF + SRC_LEVELS * SRC_SLOT) > USER_AREA_SIZE
+.error "aforth: the input source stack does not fit the user area"
+.endif
 
 // The data stack.
 //
@@ -252,7 +339,8 @@
 // machine.S, so the direct form only assembles inside that one file. The
 // instruction count on the path a word actually takes is the same either way.
 //
-// Ticket 012 priced these, and docs/system/benchmark.md holds the numbers. The
+// These have been priced; docs/reference/dispatch-performance.md has the working.
+// The
 // guards are two-fifths of every instruction aforth executes and 8% of its
 // time, 17% on a loop of PICK and ROLL, which pay NEED and then NEEDX. The load
 // at the top of each one is worth about twice what the subtract, compare and
@@ -366,17 +454,27 @@
 .endm
 
 // Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the eight after them are raised by the words that meet them — a
+// first four; the ten after them are raised by the words that meet them — a
 // divide by zero, a pictured output overflow, an input line too long for the
 // buffer, a name the dictionary does not hold, a defining word with no name
 // left on the line, a name too long to count in one byte, a dictionary with no
-// room left, and a control-flow word given something that is not a place in
-// the dictionary.
+// room left, a control-flow word given something that is not a place in the
+// dictionary, a source stack with no level free, a file that ends inside a
+// comment, and a file INCLUDED could not open.
 //
-// The last two are not failures. ABORT and QUIT leave the machine the same way
-// an error does, because they must not return to the word that ran them, and
-// machine_quit tells them apart by the number: it prints nothing for either,
-// and empties the data stack for ABORT but not for QUIT.
+// The last three are not failures to report. ABORT and QUIT leave the machine
+// the same way an error does, because they must not return to the word that ran
+// them, and machine_quit tells them apart by the number: it prints nothing for
+// either, and empties the data stack for ABORT but not for QUIT.
+//
+// ERR_REPORTED is a failure that has already printed. include_impl writes the
+// message and its own traceback line as it unwinds, because the file name and
+// the line number live in a frame that dies before machine_quit sees the
+// number. It then raises this instead, and machine_quit clears up without
+// printing a second message.
+//
+// These three stay the highest numbers, because quit_report tells a message
+// from a silent exit by comparing against the last one that has a message.
 //
 // The numbers are runtime only. Nothing writes one to disk, so unlike a code
 // field's index they may be renumbered when an error is added in the middle.
@@ -392,7 +490,11 @@
 #define ERR_NAME_TOO_LONG       10
 #define ERR_DICT_FULL           11
 #define ERR_CONTROL_FLOW        12
-#define ERR_ABORT               13
-#define ERR_QUIT                14
+#define ERR_SOURCE_TOO_DEEP     13
+#define ERR_UNTERMINATED_COMMENT 14
+#define ERR_OPEN_FAILED         15
+#define ERR_REPORTED            16
+#define ERR_ABORT               17
+#define ERR_QUIT                18
 
 #endif // AFORTH_MACHINE_H

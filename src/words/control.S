@@ -176,17 +176,13 @@ cf_resolve:
 
 // RECURSE compiles the definition being written, which its own name cannot
 // reach: : hides the entry until ; unhides it, so that a name inside a
-// definition means the word that was there before.
-//
-// The code field follows the name, padded to a cell. That is the arithmetic
-// the HEADER macro does at assembly time and dict_find does at df_found, done
-// here a third time on the entry LATEST names.
+// definition means the word that was there before. So it reads LATEST and works
+// out that entry's code field itself.
         DEFCODE "RECURSE", 7, recurse, F_IMMEDIATE      // ( C: -- )
         ldr     x1, [UP, #UV_LATEST]
         add     x2, DBASE, x1
         ldrb    w3, [x2, #ENT_COUNT]
-        add     x3, x3, #(ENT_NAME + 7)
-        and     x3, x3, #-8
+        CFOFF   x3, x3
         add     x0, x1, x3              // the code field's offset: the xt
         bl      dict_comma
         RAISE

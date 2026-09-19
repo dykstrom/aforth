@@ -89,6 +89,7 @@
 // dictionary — or wrapped, which a wild ALLOT does — fails it.
         .p2align        2
         .globl  dict_set_here
+        FUNC_TYPE(dict_set_here)
 dict_set_here:
         ldr     x1, [UP, #UV_DICT_END]
         cmp     x0, x1
@@ -100,6 +101,7 @@ dict_set_here:
         ret
 1:      mov     x0, #ERR_DICT_FULL
         ret
+        FUNC_SIZE(dict_set_here)
 
 // Store the cell in x0 at HERE and move HERE one cell up. Returns 0, or
 // ERR_DICT_FULL having written nothing.
@@ -108,6 +110,7 @@ dict_set_here:
 // dict_compile_literal compiles a literal.
         .p2align        2
         .globl  dict_comma
+        FUNC_TYPE(dict_comma)
 dict_comma:
         ldr     x1, [UP, #UV_HERE]
         add     x2, x1, #8
@@ -120,6 +123,7 @@ dict_comma:
         ret
 1:      mov     x0, #ERR_DICT_FULL
         ret
+        FUNC_SIZE(dict_comma)
 
         DEFCODE "HERE", 4, here         // ( -- addr )
         ROOM    1

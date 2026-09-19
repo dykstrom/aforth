@@ -40,6 +40,28 @@ prints "( takes the rest of the line when there is no )" '1 ( no closing paren
 2 + .' ' ok
 3  ok'
 
+# From a file it runs on instead, which is what Forth-2012's File-Access word
+# set asks of it. The terminal keeps the old behaviour, because waiting there
+# for a ) the user does not know it wants is a trap. See docs/system/parsing.md.
+PAREN_DIR=$(mktemp -d)
+printf '( a comment\n  that runs on )\n42 .\n'   > "$PAREN_DIR/cmt.f"
+printf '42 .\n( never closed\n'                  > "$PAREN_DIR/uncmt.f"
+printf ': T ( n --\n  n ) . ;\n7 T\n'             > "$PAREN_DIR/indef.f"
+
+prints "( reads on into the next line of a file" \
+  "INCLUDE $PAREN_DIR/cmt.f" '42  ok'
+prints "( crosses a line inside a definition in a file" \
+  "INCLUDE $PAREN_DIR/indef.f" '7  ok'
+
+# The standard says nothing about a file that ends first, and a missing ) is
+# almost always a mistake.
+raises "a file that ends inside a comment" \
+  "INCLUDE $PAREN_DIR/uncmt.f" \
+  "aforth: unterminated comment
+aforth:   in $PAREN_DIR/uncmt.f, line 2"
+
+rm -rf "$PAREN_DIR"
+
 prints "\\ takes the rest of the line" '1 \ 2 3 4
 .' ' ok
 1  ok'

@@ -1,0 +1,4 @@
+# The .f extension is Fortran's as well as Forth's, and GitHub's language
+# detection guesses from it. ADR 0003 chose .f for Forth source and said to add
+# this line once such files exist; test/bench/ and lib/ now hold some.
+*.f linguist-language=Forth

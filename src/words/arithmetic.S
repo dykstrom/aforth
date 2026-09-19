@@ -205,7 +205,7 @@
 // double and divide that, which is the whole point of them: it is what keeps
 // n1 n2 */ n3 exact when the product does not fit a cell. M* and SM/REM
 // already do that work, so a primitive would only be a wrapper around this
-// list. They also keep DOCOL and EXIT exercised until : arrives in ticket 010.
+// list.
         DEFWORD "*/MOD", 5, star_slash_mod      // ( n1 n2 n3 -- n4 n5 )
         TOKEN   to_r                    // hold the divisor
         TOKEN   m_star                  // n1 n2 -> a double
@@ -236,7 +236,7 @@
         eor     TOS, x0, TOS
         NEXT
 
-        DEFCODE "INVERT", 6, invert     // ( x1 x2 -- x3 )
+        DEFCODE "INVERT", 6, invert     // ( x1 -- x2 )
         NEED    1
         mvn     TOS, TOS
         NEXT

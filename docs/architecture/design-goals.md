@@ -1,7 +1,8 @@
 # Design goals
 
-The project's binding goals. The machine and the first words are written, so some of these rules
-now constrain code that exists; the rest still constrain code that does not.
+What aforth must be: the goals that decide what the system is for, what it runs on, and what it
+may not trade away. The rules for writing the machine that satisfies them are in
+[machine-rules.md](machine-rules.md).
 
 Source: the project's design goals as stated by the developer. Goals that are not settled are not
 rules; they are tracked in
@@ -33,49 +34,10 @@ The goals are not ranked, except where a rule states a trade-off.
 ## Warm start
 
 - aforth MUST support warm start.
-- Code MUST be relocatable.
-- The dictionary MUST NOT contain absolute code addresses. A code field MUST hold a primitive's
-  index, and a link inside the dictionary MUST be an offset from the dictionary base. Executables
-  load at a fresh address on every run, so a saved image holding an absolute address is invalid on
-  reload.
-- An execution token MUST be the offset of a code field from the dictionary base, never an address
-  and never the offset of the entry that carries it. `EXECUTE` adds the base back, and 0 is not a
-  token: the dictionary's first cell is reserved so that name lookup can return 0 for a name it did
-  not find.
-- aforth MUST NOT generate code at runtime. Generated code on macOS/ARM64 requires W^X handling and
-  a JIT entitlement, and both platforms require instruction-cache maintenance.
+- Code MUST be relocatable, and nothing aforth saves may depend on the address the process
+  happened to load at. What that forbids in the dictionary, and what a code field and an execution
+  token hold instead, is in [machine-rules.md](machine-rules.md).
 - Source: [ADR 0005](../adr/0005-indirect-threading-with-index-code-fields.md).
-
-## Machine model
-
-- The Forth machine MUST live in the eight registers named in `src/include/machine.h`: x19 the
-  instruction pointer, x20 the data stack pointer, x21 the return stack pointer, x22 the top data
-  stack item, x23 the word register, x24 the dictionary base, x25 the index table base, and x26 the
-  user area base.
-- The top item of the data stack MUST be held in a register, not in memory.
-- The top item MUST be treated as undefined when the stack is empty, so a word that reads the stack
-  MUST check the depth first.
-- A primitive MUST reach the stacks through the macros in `src/include/machine.h`, and MUST NOT name
-  a stack pointer register directly.
-- A routine that a word calls MUST NOT change x27 or x28. A primitive may keep values in those two
-  registers across a libc call, and a callee that clobbers one takes that away. `write_stderr` in
-  `src/machine.S` holds its argument on the stack for this reason.
-- x16, x17 and x18 MUST NOT be used. The Mach-O dynamic linker clobbers x16 and x17 at any call,
-  and x18 is reserved for the platform on both targets.
-- Source: [ADR 0006](../adr/0006-assign-eight-registers-to-the-forth-machine.md).
-
-## Leaving the machine
-
-- Everything that leaves the Forth machine early MUST go through the vector in `UV_ABORT` and out
-  of `aforth_enter`, carrying a number. That covers the stack guards, a word that raises, and
-  `ABORT` and `QUIT`, which are not failures but must not return to the word that ran them either.
-- The routine in the vector MUST NOT print. `machine_quit` reads the number, prints what it means,
-  and empties what that number says to empty.
-- A guard macro — `NEED`, `ROOM`, `RNEED`, `RROOM` — MUST NOT be used by code running outside
-  `aforth_enter`. `enter_return` puts `sp` back to the frame of the last `aforth_enter`, and that
-  frame is gone. Such code MUST make the comparison itself, as `machine_quit` does before it pushes
-  a number.
-- Source: [ADR 0008](../adr/0008-leave-the-machine-through-one-vector.md).
 
 ## Usability
 
@@ -103,27 +65,15 @@ The goals are not ranked, except where a rule states a trade-off.
 - The editor MUST be taken from `$VISUAL`, then `$EDITOR`, then a built-in default of `vi`.
   `init.f` MAY override it.
 - Source: [ADR 0003](../adr/0003-configuration-in-xdg-dir-as-forth-source.md).
-
-## Output
-
-- aforth MUST write all output with `write` on file descriptor 1, through `write_stdout` in
-  `src/machine.S`.
-- aforth MUST NOT print through a stdio stream, `puts` and `printf` included, and MUST NOT hold an
-  output buffer of its own. libedit writes its prompt through stdio and flushes it, and a second
-  buffer would leave the order of the prompt and the output to the two buffers.
-- Source: [ADR 0007](../adr/0007-write-output-on-file-descriptor-1.md).
-
-## Text and characters
-
-- One character MUST be one byte. Text MUST be held as UTF-8-encoded byte sequences.
-- `TYPE`, `S"`, the parser, and dictionary name lookup MUST stay byte-oriented.
-- Case folding for name lookup MUST cover ASCII `A`-`Z` only. Bytes of 0x80 and above MUST be left
-  unchanged.
-- aforth MUST call `setlocale(LC_CTYPE, "")` at start-up, before initialising line editing.
-- aforth MUST NOT normalize or collate text.
-- The Forth-2012 Extended Characters word set is deferred. When implemented it MUST be an optional
-  extension declared through `ENVIRONMENT?`.
-- Source: [ADR 0004](../adr/0004-represent-text-as-utf-8-bytes.md).
+- aforth MUST report a file it was told to read and cannot, and MUST NOT report a file it only
+  looked for and did not find. The user's `init.f` is the only file aforth looks for; the system
+  file beside the binary and the file `--init` names are both told-to-read. A file aforth looks for
+  MUST be asked about before it is opened, so that a missing one costs no message.
+- A file aforth cannot read MUST NOT stop start-up. Each file is attempted on its own, the prompt
+  comes up either way, and the exit status stays 0. Only a command line that will not parse exits 1.
+- A later file aforth reads by itself, such as a history file or a saved image, MUST be settled as
+  told-to-read or looked-for before it is written.
+- Source: [ADR 0011](../adr/0011-report-a-file-aforth-was-told-to-read.md).
 
 ## Testability
 

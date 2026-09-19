@@ -18,9 +18,9 @@
 // The loop is assembly because it is what enters the machine and reads what
 // unwound it. A definition can branch now, but a QUIT written in Forth would
 // still need CATCH and THROW to tell an error from a word that finished, and
-// aforth has neither. The words it reaches into the machine for are in
-// src/interpreter.S: parse_name_impl, dict_find, number_impl, machine_refill
-// and machine_execute.
+// aforth has neither. It runs the same parts the words do: parse_name_impl,
+// dict_find and number_impl in src/words/parsing.S, and machine_refill and
+// machine_execute in src/interpreter.S.
 //
 // dict.h rather than machine.h, for F_IMMEDIATE: the loop reads an entry's
 // flags to decide whether a word runs while the loop is compiling. It defines
@@ -68,20 +68,135 @@ msg_dict_full:
         .asciz  "aforth: dictionary full"
 msg_control_flow:
         .asciz  "aforth: unstructured control flow"
+msg_source_too_deep:
+        .asciz  "aforth: input sources nested too deep"
+msg_unterminated_comment:
+        .asciz  "aforth: unterminated comment"
+msg_open_failed:
+        .asciz  "aforth: cannot open file"
+
+// The lines under a message that say which file an error happened in, and
+// which file included that one. include_impl writes them as it unwinds. A file
+// opened by INCLUDE-FILE has no name, because the word is handed a descriptor.
+msg_in:
+        .asciz  "aforth:   in "
+msg_included_from:
+        .asciz  "aforth:   included from "
+msg_a_file:
+        .asciz  "a file"
+msg_line:
+        .asciz  ", line "
 
         .text
 
+// Run the current source to the end of its parse area.
+//
+// Returns 0 when the parse area is empty, or the number of the error that
+// stopped it. The frame holds the name last parsed, because a word is free to
+// clobber x27 and x28 and ACCEPT does, so nothing may be kept in a register
+// across machine_execute.
+//
+// It returns every error and raises none, which matters in both directions.
+// machine_quit calls it from outside aforth_enter, where a raise would unwind
+// sp to a frame that has already been popped — the trap the ROOM comment below
+// describes. EVALUATE calls it from inside one, where a raise would unwind past
+// EVALUATE and skip the source it has to pop. So the two callers decide what to
+// do with a number, and this decides nothing.
+//
+// ERR_ABORT and ERR_QUIT come back the same way an error does. They are not
+// failures, and telling them apart is the caller's job.
+        .p2align        2
+        .globl  interpret_source
+        FUNC_TYPE(interpret_source)
+interpret_source:
+        stp     x29, x30, [sp, #-32]!
+        mov     x29, sp
+
+// One name, and then the next, until the parse area is used up.
+is_name:
+        bl      parse_name_impl
+        str     x0, [sp, #16]           // the name, for the number and the
+        str     x1, [sp, #24]           // message that may need it
+        cbz     x1, is_done             // nothing left to parse
+
+        bl      dict_find
+        cbz     x0, is_number
+
+        // Compiling, and the word is not immediate: its token goes into the
+        // definition being built instead of being run. dict_comma reports
+        // rather than raises, which is exactly the shape this routine wants.
+        ldr     x2, [UP, #UV_STATE]
+        cbz     x2, is_run
+        tst     w1, #F_IMMEDIATE
+        b.ne    is_run
+        bl      dict_comma
+        cbz     x0, is_name
+        b       is_return
+
+is_run:
+        bl      machine_execute
+        cbz     x0, is_name             // the word ran to its end
+        b       is_return
+
+// Not a word, so it has to be a number.
+is_number:
+        ldr     x0, [sp, #16]
+        ldr     x1, [sp, #24]
+        bl      number_impl
+        cbz     x1, is_undefined
+
+        ldr     x2, [UP, #UV_STATE]
+        cbnz    x2, is_literal
+
+        // ROOM cannot be used here. It branches through the vector to
+        // enter_return, which puts sp back to the frame of the last
+        // aforth_enter, and that frame was popped when the word before this
+        // number finished. So the same comparison is made here, and the number
+        // is returned like any other.
+        ldr     x1, [UP, #UV_DS_LO]
+        sub     x1, DSP, x1
+        cmp     x1, #8
+        b.lt    is_overflow
+        DPUSH   x0
+        b       is_name
+
+// Compiling, so the number is compiled as a literal rather than pushed. The
+// routine is in src/interpreter.S, because (LIT)'s token is a symbol only the
+// assembler building that file has.
+is_literal:
+        bl      dict_compile_literal
+        cbz     x0, is_name
+        b       is_return
+
+is_undefined:
+        ldr     x0, [sp, #16]
+        ldr     x1, [sp, #24]
+        bl      err_name                // remembered, not raised
+        mov     x0, #ERR_UNDEFINED_WORD
+        b       is_return
+
+is_overflow:
+        mov     x0, #ERR_DS_OVERFLOW
+        b       is_return
+
+is_done:
+        mov     x0, #0
+
+is_return:
+        ldp     x29, x30, [sp], #32
+        ret
+        FUNC_SIZE(interpret_source)
+
 // The QUIT loop. main calls it after the banner.
 //
-// It returns at end of input, and that is the only way it returns: BYE ends
-// the process from inside the machine. The frame holds the name last parsed,
-// because a word is free to clobber x27 and x28 and ACCEPT does, so nothing
-// may be kept in a register across machine_execute.
+// It reads a line, hands it to interpret_source, and decides what the number
+// that comes back means. It returns at end of input, and that is the only way
+// it returns: BYE ends the process from inside the machine.
         .p2align        2
         .globl  machine_quit
         FUNC_TYPE(machine_quit)
 machine_quit:
-        stp     x29, x30, [sp, #-32]!
+        stp     x29, x30, [sp, #-16]!
         mov     x29, sp
 
 // Where ABORT and every reported error go: both stacks emptied.
@@ -92,10 +207,16 @@ quit_reset:
         // fall through
 
 // Where QUIT goes: the return stack only, and the data stack left alone.
+//
+// Every input source above the terminal goes in both cases. Forth-2012 says
+// QUIT returns control to the terminal, and an error inside an included file
+// must not leave the loop reading a file nobody is watching. src_reset closes
+// every file it drops.
 quit_restart:
         ldr     x0, [UP, #UV_R0]
         mov     RSP, x0
         str     xzr, [UP, #UV_STATE]
+        bl      src_reset
 
 quit_line:
         bl      machine_refill
@@ -103,74 +224,12 @@ quit_line:
         DPOP    x0
         cbz     x0, quit_eof
 
-// One name, and then the next, until the line is used up.
-quit_name:
-        bl      parse_name_impl
-        str     x0, [sp, #16]           // the name, for the number and the
-        str     x1, [sp, #24]           // message that may need it
-        cbz     x1, quit_ok             // nothing left on the line
-
-        bl      dict_find
-        cbz     x0, quit_number
-
-        // Compiling, and the word is not immediate: its token goes into the
-        // definition being built instead of being run. dict_comma reports
-        // rather than raises, because a raise here would unwind to a frame
-        // that has already been popped.
-        ldr     x2, [UP, #UV_STATE]
-        cbz     x2, quit_run
-        tst     w1, #F_IMMEDIATE
-        b.ne    quit_run
-        bl      dict_comma
-        cbz     x0, quit_name
-        b       quit_failed
-
-quit_run:
-        bl      machine_execute
-        cbz     x0, quit_name           // the word ran to its end
+        bl      interpret_source
+        cbz     x0, quit_ok
         cmp     x0, #ERR_QUIT
         b.eq    quit_restart
         cmp     x0, #ERR_ABORT
         b.eq    quit_reset
-        b       quit_failed
-
-// Not a word, so it has to be a number.
-quit_number:
-        ldr     x0, [sp, #16]
-        ldr     x1, [sp, #24]
-        bl      number_impl
-        cbz     x1, quit_undefined
-
-        ldr     x2, [UP, #UV_STATE]
-        cbnz    x2, quit_literal
-
-        // ROOM cannot be used here. It branches through the vector to
-        // enter_return, which puts sp back to the frame of the last
-        // aforth_enter, and that frame was popped when the word before this
-        // number finished. So the same comparison is made here, and it
-        // branches to this file's own reporting.
-        ldr     x1, [UP, #UV_DS_LO]
-        sub     x1, DSP, x1
-        cmp     x1, #8
-        b.lt    quit_overflow
-        DPUSH   x0
-        b       quit_name
-
-// Compiling, so the number is compiled as a literal rather than pushed. The
-// routine is in src/interpreter.S, because (LIT)'s token is a symbol only the
-// assembler building that file has.
-quit_literal:
-        bl      dict_compile_literal
-        cbz     x0, quit_name
-        b       quit_failed
-
-quit_undefined:
-        ldr     x0, [sp, #16]
-        ldr     x1, [sp, #24]
-        b       undefined_word          // stores the name and raises
-
-quit_overflow:
-        mov     x0, #ERR_DS_OVERFLOW
         // fall through
 
 // Report what failed and start the next line. The rest of the line the error
@@ -191,7 +250,7 @@ quit_eof:
         adr_sym x0, msg_newline
         mov     x1, #1
         bl      write_stdout
-        ldp     x29, x30, [sp], #32
+        ldp     x29, x30, [sp], #16
         ret
         FUNC_SIZE(machine_quit)
 
@@ -203,8 +262,10 @@ quit_eof:
 // expects an error stays silent, and so that the message is built in one place.
         .p2align        2
         .globl  quit_abort
+        FUNC_TYPE(quit_abort)
 quit_abort:
         b       enter_return
+        FUNC_SIZE(quit_abort)
 
 // Print the error in x0 on file descriptor 2. ABORT and QUIT print nothing:
 // they are how a program leaves what it was doing, not failures.
@@ -214,11 +275,13 @@ quit_abort:
 // no output buffer to format into and printf is variadic, which the two
 // platforms pass differently.
         .p2align        2
+        .globl  quit_report
+        FUNC_TYPE(quit_report)
 quit_report:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
 
-        cmp     x0, #ERR_CONTROL_FLOW
+        cmp     x0, #ERR_OPEN_FAILED
         b.hi    qr_done
 
         cmp     x0, #ERR_DS_OVERFLOW
@@ -243,6 +306,12 @@ quit_report:
         b.eq    qr_dict_full
         cmp     x0, #ERR_CONTROL_FLOW
         b.eq    qr_control_flow
+        cmp     x0, #ERR_SOURCE_TOO_DEEP
+        b.eq    qr_source_too_deep
+        cmp     x0, #ERR_UNTERMINATED_COMMENT
+        b.eq    qr_unterminated_comment
+        cmp     x0, #ERR_OPEN_FAILED
+        b.eq    qr_open_failed
         adr_sym x0, msg_ds_underflow
         b       qr_write
 qr_ds_overflow:
@@ -275,12 +344,24 @@ qr_dict_full:
 qr_control_flow:
         adr_sym x0, msg_control_flow
         b       qr_write
+qr_source_too_deep:
+        adr_sym x0, msg_source_too_deep
+        b       qr_write
+qr_unterminated_comment:
+        adr_sym x0, msg_unterminated_comment
+        b       qr_write
 
-// The one error that names a word. The name is in the user area, put there by
-// undefined_word, and it points into the input buffer, which nothing has
-// refilled yet.
+// The two errors that name something. The name is in the user area, put there
+// by err_name, and it points into the input buffer, which nothing has refilled
+// yet.
 qr_undefined_word:
         adr_sym x0, msg_undefined_word
+        b       qr_named
+
+qr_open_failed:
+        adr_sym x0, msg_open_failed
+
+qr_named:
         bl      write_stderr
         ldr     x1, [UP, #UV_ERR_LEN]
         cbz     x1, qr_newline          // ' at the end of a line names nothing
@@ -302,6 +383,7 @@ qr_newline:
 qr_done:
         ldp     x29, x30, [sp], #16
         ret
+        FUNC_SIZE(quit_report)
 
 // Write x1 bytes at x0 to file descriptor 2, for the parts of a message whose
 // length is known. write_stderr in src/machine.S sizes a NUL-terminated string
@@ -315,4 +397,67 @@ err_write:
         mov     x0, #2                  // fd
         bl      CSYM(write)
         ldp     x29, x30, [sp], #16
+        ret
+
+// Write one line of the traceback that goes under a message. x0 is 0 for the
+// file the error happened in and anything else for a file that included it.
+//
+// It reads the current source level, so include_impl calls it before it pops.
+// Only a file level has a name and a line to report, which is why an EVALUATE
+// between two files adds no line.
+        .p2align        2
+        .globl  err_location
+        FUNC_TYPE(err_location)
+err_location:
+        stp     x29, x30, [sp, #-16]!
+        mov     x29, sp
+        cbz     x0, 1f
+        adr_sym x0, msg_included_from
+        b       2f
+1:      adr_sym x0, msg_in
+2:      bl      write_stderr
+
+        ldr     x1, [UP, #UV_SRC_NAME_LEN]
+        cbz     x1, 3f
+        ldr     x0, [UP, #UV_SRC_NAME]
+        bl      err_write
+        b       4f
+3:      adr_sym x0, msg_a_file
+        bl      write_stderr
+
+4:      adr_sym x0, msg_line
+        bl      write_stderr
+        ldr     x0, [UP, #UV_SRC_LINE]
+        bl      err_number
+        adr_sym x0, msg_newline
+        mov     x1, #1
+        bl      err_write
+        ldp     x29, x30, [sp], #16
+        ret
+        FUNC_SIZE(err_location)
+
+// Write x0 on file descriptor 2 in decimal. A line number is never negative,
+// and twenty digits hold any unsigned 64-bit number, so the digits are built
+// backwards into the frame and written in one call.
+//
+// The pictured output words would do this, but they build into the buffer a
+// program may be part way through using, and an error must not disturb it.
+        .p2align        2
+err_number:
+        stp     x29, x30, [sp, #-48]!
+        mov     x29, sp
+        add     x3, sp, #40             // one past the last digit
+        mov     x4, #10
+1:      udiv    x5, x0, x4
+        msub    x6, x5, x4, x0          // the remainder
+        add     x6, x6, #48             // '0'
+        sub     x3, x3, #1
+        strb    w6, [x3]
+        mov     x0, x5
+        cbnz    x0, 1b
+        add     x1, sp, #40
+        sub     x1, x1, x3
+        mov     x0, x3
+        bl      err_write
+        ldp     x29, x30, [sp], #48
         ret

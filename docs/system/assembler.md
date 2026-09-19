@@ -54,10 +54,54 @@ measuring it; see `inner-interpreter.md`.
 48. `machine_init` in `src/machine.S` builds `REGION_SIZE` from its two 16-bit
 halves for that reason.
 
+## `CSYM` cannot take a macro
+
+`CSYM` is `_##name` on macOS and plain `name` on Linux, and the two behave
+differently when the argument is itself a macro: cpp expands an argument it
+substitutes, but not one it pastes. So `CSYM(SOME_MACRO)` resolves on Linux and
+spells the symbol `_SOME_MACRO` on macOS, where the link then fails naming a
+symbol nobody wrote.
+
+A platform difference that is itself a C symbol name therefore spells the
+assembler symbol out per platform, underscore included. `ERRNO_FN` in
+`src/include/platform.h` is the one that does, and [files.md](files.md) says
+what it is for.
+
+## A Mach-O build cannot catch a mistake in an ELF-only directive
+
+`FUNC_TYPE` and `FUNC_SIZE` expand to nothing on macOS, so a misplaced or
+malformed one builds cleanly on the development machine and fails, or lies,
+only on Linux. The same goes for anything else the table below makes
+platform-specific.
+
+clang cross-assembles, so the check costs a second and needs no container:
+
+```
+for f in src/*.S; do
+  clang --target=aarch64-unknown-linux-gnu -g -Wall -Isrc/include -c -o /dev/null $f
+done
+```
+
+`make docker-test` is the full check; this is the one to run while editing.
+
+Every `.globl` routine carries both directives, `FUNC_TYPE` after the `.globl`
+and `FUNC_SIZE` after the routine's last instruction, so that an ELF backtrace
+or profile names every aforth routine rather than some of them. `FUNC_SIZE`
+measures from the label to wherever it is written, so it goes after the last
+exit path, not after the first `ret`.
+
 ## Platform differences live in `src/include/platform.h`
 
-Never inline in a source file. The header covers five: the Mach-O underscore
-prefix on C symbols (`CSYM`), the read-only data section name
-(`SECTION_RODATA`), the ELF-only `.type` and `.size` directives (`FUNC_TYPE`,
-`FUNC_SIZE`), the `adrp` low-bits relocation syntax (`adr_sym`), and the `mmap`
-flags for one private anonymous mapping (`MMAP_FLAGS`).
+Never inline in a source file. The header covers these:
+
+| Macro | The difference |
+|-------|----------------|
+| `CSYM` | the Mach-O underscore prefix on C symbols |
+| `SECTION_RODATA` | the read-only data section name |
+| `FUNC_TYPE`, `FUNC_SIZE` | the ELF-only `.type` and `.size` directives |
+| `adr_sym` | the `adrp` low-bits relocation syntax |
+| `MMAP_FLAGS` | the flags for one private anonymous mapping |
+| `LC_CTYPE` | `setlocale`'s category number |
+| `TERMIOS_SIZE`, `TERMIOS_LFLAG_OFF`, `T_ICANON`, `T_ECHO` | the shape of `struct termios` and the two bits `KEY` clears |
+| `ERRNO_FN` | the function `errno` is a macro over |
+| `ENAMETOOLONG` | the one `errno` aforth produces itself |

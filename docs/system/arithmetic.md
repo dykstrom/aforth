@@ -2,7 +2,7 @@
 
 Forth-2012 leaves several arithmetic details to the implementation and asks
 only that they be written down. These are aforth's, and the words are in
-`src/interpreter.S`.
+`src/words/arithmetic.S`.
 
 ## Division rounds toward zero
 
@@ -23,10 +23,9 @@ truncates: `-1 2/` is `-1`, but `-1 2 /` is `0`.
 ## Dividing by zero is an error
 
 ARM64 division by zero yields zero and raises nothing, so every dividing word
-tests its divisor and takes the error path with `ERR_DIV_ZERO`. Until ticket
-008 that path prints a message and exits; afterwards it will be `ABORT`.
-Forth-2012 calls a zero divisor an ambiguous condition and permits exactly
-this.
+tests its divisor and raises `ERR_DIV_ZERO`, which prints `aforth: divide by
+zero` and empties both stacks as any other error does. Forth-2012 calls a zero
+divisor an ambiguous condition and permits exactly this.
 
 ## A double is two cells, high one on top
 
@@ -86,5 +85,4 @@ but it is not portable, and a program should not rely on it.
 not for want of an instruction: both multiply to a double and divide that
 double, which is what keeps `n1 n2 */ n3` exact when the product overflows a
 cell, and it is what the standard specifies. A primitive would have to call the
-same 128-bit division, so it would only be a wrapper. They also keep `DOCOL`
-and `EXIT` exercised until `:` arrives in ticket 010.
+same 128-bit division, so it would only be a wrapper.

@@ -14,11 +14,11 @@
 // pulled in below with #include rather than assembled separately. Include order
 // is definition order: a file may only use tokens from a file above it.
 //
-// DOCOL, EXIT, EXECUTE, (STOP), (LIT), (BRANCH) and (0BRANCH) stay here. They
-// are the inner interpreter rather than words a program reaches for, and
-// (STOP) belongs beside the aforth_enter it returns out of. The last three are
-// hidden: each reads a cell out of the list it is running, so a programmer who
-// typed one would push or jump by whatever token came next.
+// DOCOL, EXIT, EXECUTE, (STOP), (LIT), (BRANCH), (0BRANCH) and (S") stay here.
+// They are the inner interpreter rather than words a program reaches for, and
+// (STOP) belongs beside the aforth_enter it returns out of. The last four are
+// hidden: each reads something out of the list it is running, so a programmer
+// who typed one would push, jump or print by whatever came next.
 //
 // machine_execute and machine_refill at the bottom are what the outer
 // interpreter in src/outer.S calls to get into the machine. They live here
@@ -117,12 +117,35 @@
         add     IP, IP, x0, lsl #3
 1:      NEXT
 
+// (S"): push the string that follows this token in the list, and step over it.
+//
+// The third shape of inline data and the first that is not one cell: a count,
+// then that many bytes, then padding to the next cell. The count is read the
+// way (LIT) reads its cell, and the padding is what keeps a definition holding
+// a string one unbroken run of cells — so a branch measured over one is still
+// a whole number of cells, and nothing in src/words/control.S changes.
+//
+// What both S" and ." compile; ." compiles TYPE's token after it. Hidden, as
+// (LIT) is, and for the same reason: run on its own it would push whatever
+// token came next as an address and a length.
+        DEFCODE "(S\")", 4, s_quote_run, F_HIDDEN      // ( -- c-addr u )
+        ROOM    2
+        ldr     x0, [IP], #8            // the count
+        mov     x1, IP                  // the bytes, where the list stands
+        add     x2, x0, #7
+        and     x2, x2, #-8
+        add     IP, IP, x2              // past them, on the next cell
+        DPUSH   x1
+        DPUSH   x0
+        NEXT
+
 #include "words/stack.S"
 #include "words/arithmetic.S"
 #include "words/memory.S"
 #include "words/output.S"
 #include "words/input.S"
 #include "words/parsing.S"
+#include "words/file.S"
 #include "words/compile.S"
 #include "words/control.S"
 #include "words/quit.S"
@@ -186,19 +209,32 @@ machine_load_dictionary:
 // pointer is saved because a word is free to leave sp wherever it likes as
 // long as it is balanced, and (STOP) should not have to trust that.
 //
-// One level only: the saved pointer is a single cell, so entering the machine
-// again from inside it would lose the outer frame. Nothing does that yet.
+// It nests. Each entry saves two things in its own frame: the pointer the entry
+// below it left in UV_STOP_SP, so that one cell is really the top of a stack,
+// and IP, because the entry below it is part of the way through a token list
+// and this one is about to point IP at another. EVALUATE is what needs both: it
+// interprets from inside a word, so it runs words through machine_execute while
+// an aforth_enter of its caller's is still open, and the word after it in the
+// definition has to run when it finishes. See docs/system/input.md.
+//
+// Nothing else is saved. The stacks are shared on purpose — EVALUATE's stack
+// effect is i*x to j*x, so what the string does to the data stack is the point
+// — and W is scratch that dispatch fills before anything reads it.
 //
 // Returns 0 when the list ran to its end. A routine that unwinds the machine
 // early goes through enter_return with its own value in x0, which is how
 // machine_quit learns what failed and how ABORT and QUIT leave without
-// returning to the word that ran them.
+// returning to the word that ran them. An error inside a nested entry unwinds
+// to that entry and no further, and whoever called it decides whether to pass
+// it on.
         .p2align        2
         .globl  aforth_enter
         FUNC_TYPE(aforth_enter)
 aforth_enter:
-        stp     x29, x30, [sp, #-16]!
+        stp     x29, x30, [sp, #-32]!
         mov     x29, sp
+        ldr     x1, [UP, #UV_STOP_SP]
+        stp     x1, IP, [sp, #16]       // the entry below this one, and its IP
         mov     x1, sp
         str     x1, [UP, #UV_STOP_SP]
         mov     IP, x0
@@ -207,14 +243,18 @@ aforth_enter:
 
 // Leave the machine, returning x0 as aforth_enter's result. The C stack
 // pointer goes back to the frame aforth_enter built, whatever the words did
-// with sp in between.
+// with sp in between, and UV_STOP_SP and IP go back to the entry below it.
         .p2align        2
         .globl  enter_return
+        FUNC_TYPE(enter_return)
 enter_return:
         ldr     x9, [UP, #UV_STOP_SP]
         mov     sp, x9
-        ldp     x29, x30, [sp], #16
+        ldp     x9, IP, [sp, #16]
+        str     x9, [UP, #UV_STOP_SP]
+        ldp     x29, x30, [sp], #32
         ret
+        FUNC_SIZE(enter_return)
 
 // Run the word whose token is in x0, and return what aforth_enter returned: 0
 // when the word finished, or the number of the error that unwound it.
