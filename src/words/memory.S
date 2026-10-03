@@ -29,6 +29,25 @@
         DPOPM                           // and then the address
         NEXT
 
+// The pair words. Forth-2012 fixes the order: the item that was on top lies at
+// the lower address, so 2! and 2@ behave as SWAP OVER ! CELL+ ! and as
+// DUP CELL+ @ SWAP @.
+        DEFCODE "2@", 2, two_fetch      // ( a-addr -- x1 x2 )
+        NEED    1
+        ROOM    1
+        ldp     x0, x1, [TOS]           // x0 = x2, x1 = x1
+        mov     TOS, x1
+        DPUSH   x0
+        NEXT
+
+        DEFCODE "2!", 2, two_store      // ( x1 x2 a-addr -- )
+        NEED    3
+        DPOPM   x0                      // x2
+        DPOPM   x1                      // x1
+        stp     x0, x1, [TOS]
+        DPOPM                           // and then the address
+        NEXT
+
         DEFCODE "C@", 2, c_fetch        // ( c-addr -- char )
         NEED    1
         ldrb    TOSW, [TOS]
@@ -138,6 +157,15 @@ dict_comma:
         ldr     x0, [UP, #UV_DICT_END]
         ldr     x1, [UP, #UV_HERE]
         sub     x0, x0, x1
+        DPUSH   x0
+        NEXT
+
+// PAD is an area of its own in the region, PAD_SIZE bytes, rather than an
+// offset from HERE, so it stays put while the dictionary grows. Forth-2012
+// 3.3.3.6 leaves it to the program: no word of aforth's writes there.
+        DEFCODE "PAD", 3, pad           // ( -- c-addr )
+        ROOM    1
+        ldr     x0, [UP, #UV_PAD]
         DPUSH   x0
         NEXT
 

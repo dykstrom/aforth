@@ -3,10 +3,12 @@
 
 # The system file, lib/aforth.f, which cold start includes before the prompt.
 #
-# This file mirrors lib/aforth.f the way the others mirror src/words/. A word
-# defined in Forth rather than in assembly is still a word of aforth's, so it
-# needs a case here, and run-tests.sh's coverage check reads the definitions out
-# of lib/aforth.f to make sure it gets one.
+# A word defined in Forth rather than in assembly is still a word of aforth's,
+# so it needs a case, and run-tests.sh's coverage check reads the definitions out
+# of lib/aforth.f to make sure it gets one. The case goes in the file for its
+# kind of word, as it would if the word were in src/words/: */ in arithmetic.sh,
+# ['] in compile.sh. This file holds the check that the system file loads at
+# all, and the cases for WITHIN.
 #
 # Every case runs with --no-init, which drops the user's init.f and leaves the
 # system file loading: that is what makes the suite exercise it on every run.

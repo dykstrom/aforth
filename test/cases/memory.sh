@@ -22,12 +22,29 @@ prints "C! stores a byte and C@ reads it" \
 prints "+! adds to the cell" \
   'BL WORD scratch DUP 10 SWAP ! DUP 5 SWAP +! @ .' '15  ok'
 
+# 2! and 2@ round-trip a pair, and the standard fixes where each half goes: the
+# item that was on top lies at the lower address. A pair that only came back
+# in order would pass the first case with the halves swapped in memory.
+prints "2! stores a pair and 2@ reads it back" \
+  'CREATE P 2 CELLS ALLOT 1 2 P 2! P 2@ .S' '<2> 1 2  ok'
+prints "2! puts the top item at the lower address" \
+  'CREATE P 2 CELLS ALLOT 1 2 P 2! P @ . P CELL+ @ .' '2 1  ok'
+
 prints "CELL+ steps one cell"     '100 CELL+ .S'    '<1> 108  ok'
 prints "CELLS scales to cells"    '3 CELLS .S'      '<1> 24  ok'
 prints "CHAR+ steps one character" '100 CHAR+ .S'   '<1> 101  ok'
 prints "CHARS is the identity"    '3 CHARS .S'      '<1> 3  ok'
 prints "ALIGNED rounds up"        '101 ALIGNED .S'  '<1> 104  ok'
 prints "ALIGNED leaves an aligned address" '104 ALIGNED .S' '<1> 104  ok'
+
+# PAD is an area of its own, so HERE moving does not move it, and every byte
+# /PAD promises can be written. No word of aforth's writes there: a number
+# printed and a string made at the prompt leave it as it was.
+prints "PAD stays put while HERE moves" 'PAD 100 ALLOT PAD = .' '-1  ok'
+prints "PAD holds /PAD bytes" \
+  'PAD S" /PAD" ENVIRONMENT? DROP 2DUP 65 FILL + 1- C@ .' '65  ok'
+prints "no word writes PAD" \
+  '7 PAD ! 12345 . S" x" 2DROP PAD @ .' '12345 7  ok'
 
 prints "ALIGN leaves the stack alone" '9 ALIGN .S'  '<1> 9  ok'
 prints "ALIGN moves an aligned pointer nowhere" \

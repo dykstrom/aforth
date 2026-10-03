@@ -14,11 +14,16 @@
 // pulled in below with #include rather than assembled separately. Include order
 // is definition order: a file may only use tokens from a file above it.
 //
-// DOCOL, EXIT, EXECUTE, (STOP), (LIT), (BRANCH), (0BRANCH) and (S") stay here.
-// They are the inner interpreter rather than words a program reaches for, and
-// (STOP) belongs beside the aforth_enter it returns out of. The last four are
-// hidden: each reads something out of the list it is running, so a programmer
-// who typed one would push, jump or print by whatever came next.
+// DOCOL, EXIT, EXECUTE, (STOP), (LIT), (BRANCH), (0BRANCH), (DO), (LOOP),
+// (+LOOP), (?DO), (S"), (ABORT"), (DOES>), (TO) and (DEFER) stay here, with
+// the code fields DOCON, DOVAR, DODOES, DODEFER and DOMARKER. They are the
+// inner interpreter rather than words a program reaches for, and (STOP)
+// belongs beside the aforth_enter it returns out of. (STOP) and the twelve
+// words after it are hidden: each of the twelve is the run-time half of a word
+// the programmer writes, reading the list it is running or leaving a frame on
+// the return stack for its other half, so a programmer who typed one would
+// push, jump, print, store, strand a pair of cells or rewrite the newest word
+// by whatever came next.
 //
 // machine_execute and machine_refill at the bottom are what the outer
 // interpreter in src/outer.S calls to get into the machine. They live here
@@ -60,6 +65,44 @@
         ROOM    1
         add     x0, W, #8
         DPUSH   x0
+        NEXT
+
+// DODOES: push the address of the parameter field, as DOVAR does, then run the
+// token list the does-cell names, as DOCOL runs the one in the parameter
+// field. The code field of a word made by CREATE and given its behaviour by
+// DOES>; (DOES>) below is what points an entry here.
+//
+// The does-cell holds an offset from DBASE rather than an address, so a word
+// made this way is as relocatable as the rest of the dictionary (ADR 0005).
+        CODE    dodoes                  // ( -- a-addr ) ( R: -- nest-sys )
+        ROOM    1
+        RROOM   1
+        add     x0, W, #8
+        DPUSH   x0
+        RPUSH   IP                      // where to carry on afterwards
+        ldr     x0, [W, #CF_DOES]
+        add     IP, DBASE, x0           // the does-part
+        NEXT
+
+// DODEFER: run the word whose token is in the parameter field. The code field
+// of a word made by DEFER. It is EXECUTE with the token read from the body
+// instead of the stack, so a deferred word costs one dispatch more than the
+// word it runs and no stack or return stack at all.
+        CODE    dodefer                 // ( i*x -- j*x )
+        ldr     x0, [W, #8]
+        add     W, DBASE, x0
+        DISPATCH
+
+// DOMARKER: put HERE and LATEST back to what the parameter field says they
+// were, which takes the word and every word after it out of the dictionary.
+// The code field of a word made by MARKER. Both cells are offsets from DBASE,
+// so a marker is as relocatable as the rest of the dictionary (ADR 0005).
+        CODE    domarker                // ( -- )
+        ldr     x0, [W, #8]
+        add     x0, DBASE, x0
+        str     x0, [UP, #UV_HERE]
+        ldr     x0, [W, #16]
+        str     x0, [UP, #UV_LATEST]
         NEXT
 
 // EXECUTE: run the word whose token is on the data stack.
@@ -117,6 +160,119 @@
         add     IP, IP, x0, lsl #3
 1:      NEXT
 
+// (DO): take a loop's limit and starting index off the data stack and put them
+// on the return stack, where I, J and (LOOP) read them.
+//
+// The index goes on top, because I and (LOOP) read it far more often than
+// anything reads the limit. The frame is two cells and no more, which is what
+// UNLOOP drops and what a definition leaving from inside a loop has to put
+// back before EXIT finds the address DOCOL saved.
+//
+// Sharing the return stack is what makes a loop cost no area of its own, and
+// it is also why J reaches the frame below this one only while both loops are
+// in the same definition: a call puts DOCOL's saved address between them. See
+// docs/system/control-flow.md.
+//
+// Hidden, as (LIT) is. Run on its own it would park two cells on the return
+// stack that nothing would ever drop.
+        DEFCODE "(DO)", 4, do_run, F_HIDDEN     // ( limit index -- ) ( R: -- limit index )
+        NEED    2
+        RROOM   2
+        DGETM   0, x0                   // the limit, under the index
+        RPUSH   x0
+        RPUSH   TOS                     // the index, on top
+        DPOPM
+        DPOPM
+        NEXT
+
+// (LOOP): add one to the index, and go back to the start of the loop unless
+// the index has reached the limit.
+//
+// The distance follows this token in the list and is applied the way (BRANCH)
+// applies its own: a count of cells rather than an address, so a definition
+// holding a loop is as relocatable as one without (ADR 0005).
+//
+// The test is for equality, which is what Forth-2012 asks for. A loop whose
+// limit is its starting index therefore does not run no times: 0 0 DO LOOP
+// counts the whole cell range before the index meets 0 again. ?DO is the
+// standard's word for the other reading, and aforth has not got it yet.
+//
+// The turn that ends the loop drops both parameters, so a loop that runs out
+// needs no UNLOOP after it. That turn leaves the index unstored, because
+// nothing reads it again.
+        DEFCODE "(LOOP)", 6, loop_run, F_HIDDEN // ( -- ) ( R: limit index -- limit index | )
+        RNEED   2
+        ldr     x0, [IP], #8            // the distance
+        RGET    0, x1                   // the index
+        add     x1, x1, #1
+        RGET    1, x2                   // the limit
+        cmp     x1, x2
+        b.eq    1f
+        RSET    0, x1
+        add     IP, IP, x0, lsl #3      // round again
+        NEXT
+1:      RDROP   2                       // the loop is done with its parameters
+        NEXT
+
+// (+LOOP): add the step on the data stack to the index, and go back to the
+// start of the loop unless the index crossed the limit.
+//
+// Forth-2012 puts the end of the loop at the boundary between the limit minus
+// one and the limit, and asks whether the step carried the index over it. The
+// test below asks the same question the other way round: it subtracts the
+// limit from the index before and after the step, and ends the loop when those
+// two differ in sign. That is what makes a negative step count down to the
+// limit and stop on it, where the equality (LOOP) tests for would run past it.
+//
+// A step of one behaves as (LOOP) does, so LOOP could have compiled this word
+// and does not: (LOOP) reaches its own answer in two instructions fewer.
+        DEFCODE "(+LOOP)", 7, plus_loop_run, F_HIDDEN   // ( n -- ) ( R: limit index -- limit index | )
+        NEED    1
+        RNEED   2
+        ldr     x0, [IP], #8            // the distance
+        RGET    0, x1                   // the index
+        RGET    1, x2                   // the limit
+        sub     x3, x1, x2              // index - limit, before the step
+        add     x1, x1, TOS             // the new index
+        DPOPM
+        sub     x4, x1, x2              // index - limit, after it
+        eor     x3, x3, x4              // the sign bit differs iff it crossed
+        tbnz    x3, #63, 1f
+        RSET    0, x1
+        add     IP, IP, x0, lsl #3      // round again
+        NEXT
+1:      RDROP   2                       // the loop is done with its parameters
+        NEXT
+
+// (?DO): start a counted loop, unless the range is empty.
+//
+// (DO) counts from its starting index until the index meets the limit, so a
+// range of no width counts the whole cell range instead of nothing. This word
+// is the standard's answer to that: equal limit and index means the loop runs
+// no times, and the distance that follows the token carries it past the whole
+// loop.
+//
+// That distance is written by the LOOP or +LOOP that closes the loop, and not
+// by ?DO itself, because where the loop ends is not known until then. ?DO
+// leaves the cell on the same list of unresolved branches LEAVE uses, since
+// both land in the same place. See docs/system/control-flow.md.
+        DEFCODE "(?DO)", 5, q_do_run, F_HIDDEN  // ( limit index -- ) ( R: -- limit index | )
+        NEED    2
+        RROOM   2
+        ldr     x0, [IP], #8            // the distance past the loop
+        DGETM   0, x1                   // the limit
+        cmp     TOS, x1
+        b.eq    1f
+        RPUSH   x1
+        RPUSH   TOS                     // the index, on top, as (DO) leaves it
+        DPOPM
+        DPOPM
+        NEXT
+1:      DPOPM
+        DPOPM
+        add     IP, IP, x0, lsl #3      // the range is empty: skip the loop
+        NEXT
+
 // (S"): push the string that follows this token in the list, and step over it.
 //
 // The third shape of inline data and the first that is not one cell: a count,
@@ -138,6 +294,85 @@
         DPUSH   x1
         DPUSH   x0
         NEXT
+
+// (ABORT"): abort with the message under it when the flag under that is true.
+//
+// What ABORT" compiles, after the (S") that pushes the message. A false flag
+// drops all three and the definition carries on. A true one leaves the machine
+// the way ABORT does, and the message goes in the user area for quit_report to
+// print. It lies inside the definition, which the unwind leaves alone, so it
+// needs no reporting early.
+//
+// Hidden, as (S") is. Run on its own it would read a string nobody laid down.
+        DEFCODE "(ABORT\")", 8, abort_quote_run, F_HIDDEN     // ( x c-addr u -- )
+        NEED    3
+        DPOP    x1                      // u
+        DPOP    x0                      // c-addr
+        DPOP    x2                      // x
+        cbz     x2, 1f
+        bl      err_name                // never returns, so x30 is free
+        mov     x0, #ERR_ABORT_QUOTE
+        b       machine_error
+1:      NEXT
+
+// (DOES>): give the newest word the behaviour that follows this token, and
+// leave the definition that is running.
+//
+// What DOES> compiles. The tokens after it are the does-part: they do not run
+// now, but every time the newest word runs. So this word writes where they
+// start into that word's does-cell, as an offset from DBASE, and points its
+// code field at DODOES. Then it does what EXIT does, because the rest of the
+// list belongs to the word it just changed and not to the one running it.
+//
+// The newest word is whatever LATEST names, which is the word CREATE made in
+// the usual defining word. Forth-2012 makes any other entry an ambiguous
+// condition, and nothing here checks, as >BODY does not check its token.
+//
+// Hidden, as (LIT) is. Run on its own it would rewrite the newest word to run
+// whatever list it was reached from.
+        DEFCODE "(DOES>)", 7, does_run, F_HIDDEN        // ( -- ) ( R: nest-sys -- )
+        RNEED   1
+        ldr     x1, [UP, #UV_LATEST]
+        add     x1, DBASE, x1
+        ldrb    w2, [x1, #ENT_COUNT]
+        CFOFF   x2, x2
+        add     x1, x1, x2              // the newest word's code field
+        sub     x0, IP, DBASE
+        str     x0, [x1, #CF_DOES]      // the does-part, as an offset
+        mov     x0, #XT_dodoes
+        str     x0, [x1]
+        RPOP    IP
+        NEXT
+
+// (TO): store the top of the stack in the body of the word whose token follows
+// this one in the list, and step over it.
+//
+// What TO and IS compile. The token is an offset like any other, so a
+// definition holding one is as relocatable as the rest (ADR 0005), where the
+// body's address compiled as a literal would not be.
+//
+// Hidden, as (LIT) is. Run on its own it would store into the body of whatever
+// token came next.
+        DEFCODE "(TO)", 4, to_run, F_HIDDEN     // ( x -- )
+        NEED    1
+        ldr     x0, [IP], #8            // the word's token
+        add     x0, DBASE, x0
+        str     TOS, [x0, #8]           // its body
+        DPOPM
+        NEXT
+
+// (DEFER): what a deferred word runs until IS gives it a word to run.
+//
+// DEFER stores this token in every word it makes, so running one early raises
+// rather than running whatever its body happened to hold. The message cannot
+// name the word: dispatch has already replaced its code field in W with this
+// one's.
+//
+// Hidden, because nothing should run it by name. DEFER@ can still hand its
+// token back.
+        DEFCODE "(DEFER)", 7, defer_unset, F_HIDDEN     // ( -- )
+        mov     x0, #ERR_DEFER_UNSET
+        b       machine_error
 
 #include "words/stack.S"
 #include "words/arithmetic.S"

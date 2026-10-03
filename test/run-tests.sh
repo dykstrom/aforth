@@ -159,9 +159,9 @@ esac
 
 # Every word needs a case.
 #
-# It takes the name out of every DEFCODE and DEFWORD in the assembly sources,
-# and out of every colon definition in the system file lib/aforth.f, and fails
-# naming any word no case mentions. A word written in Forth is as much a word
+# It takes the name out of every DEFCODE, DEFWORD and DEFALIAS in the assembly
+# sources, and out of every colon definition in the system file lib/aforth.f,
+# and fails naming any word no case mentions. A word written in Forth is as much a word
 # of aforth's as one written in assembly, and just as easy to add and forget.
 # A hidden word is skipped: (STOP) cannot be reached by name.
 #
@@ -188,7 +188,7 @@ case_tokens=$(cat "$HERE"/cases/*.sh |
   sed '/^$/d' | sort -u)
 
 defined_words=$(
-  grep -hE '^[[:space:]]+DEF(CODE|WORD)' "$HERE"/../src/words/*.S \
+  grep -hE '^[[:space:]]+DEF(CODE|WORD|ALIAS)' "$HERE"/../src/words/*.S \
       "$HERE"/../src/interpreter.S |
     grep -v F_HIDDEN |
     sed -E -e 's/^[^"]*"((\\.|[^"\\])*)".*$/\1/' \

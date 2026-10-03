@@ -19,6 +19,14 @@ prints "TYPE writes the bytes"     'BL WORD hello COUNT TYPE' 'hello ok'
 prints "CR starts a new line"      '65 EMIT CR 66 EMIT' 'A
 B ok'
 
+# .( is immediate, so it prints while a definition is being written and
+# compiles nothing into it.
+prints ".( prints up to the parenthesis" '.( hello) 1 .' 'hello1  ok'
+prints ".( prints while compiling" ': T .( made) 1 ;
+T .' 'made ok
+1  ok'
+prints ".( parses the empty string" '.( ) 1 .' '1  ok'
+
 prints "BASE starts at ten"        'BASE @ .'        '10  ok'
 prints "HEX sets sixteen"          'HEX BASE @ DECIMAL .' '16  ok'
 prints "DECIMAL sets ten again"    'HEX DECIMAL BASE @ .' '10  ok'

@@ -2,15 +2,9 @@
 
 ## What is this
 
-aforth is a Forth system written in ARM64 assembly, targeting the Forth-2012
-standard. It is meant for anyone who wants a Forth on ARM64, not for internal
-use only.
-
-Development is early. The binary builds its dictionary at start-up, prints a
-banner, and reads and runs Forth until `BYE` or end of input. There is no
-counted loop and no way to write a file. The README's Status section lists the
-words that work today, and `docs/system/startup.md` covers the command line and
-the two files cold start reads.
+aforth is a Forth-2012 system in ARM64 assembly, for anyone who wants a Forth
+on ARM64. Development is early: it reads and runs Forth until `BYE` or end of
+input. The README's Status section lists what works today.
 
 ## Stack
 
@@ -27,16 +21,16 @@ the two files cold start reads.
 
 | Path | What's there |
 |------|-------------|
-| `src/` | ARM64 assembly sources. `aforth.S` holds `main`, `args_parse`, which reads the command line, and `cold_start`, which reads the two init files; `machine.S` allocates the region, starts the machine and holds every routine that reaches libc for input, output, or the paths cold start reads; `interpreter.S` holds the code-field routines `DOCOL`, `DOCON` and `DOVAR`, the words `EXIT`, `EXECUTE`, `(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)` and `(S")`, the start-up routines and the re-entrant `aforth_enter`, and builds the dictionary image by including the files in `src/words/`; `outer.S` holds `interpret_source`, which consumes one parse area, the `QUIT` loop over it, the one error path and the error messages. |
-| `src/words/` | The built-in words, one file per kind, in include order: `stack.S`, `arithmetic.S`, `memory.S`, `output.S`, `input.S`, `parsing.S`, `file.S`, `compile.S`, `control.S` and `quit.S`. These are `#include`d by `interpreter.S`, not assembled on their own: every entry has to be in one assembler pass. Include order is definition order, so a file may only compile a token from a file above it. See `docs/system/inner-interpreter.md` for which file a new word goes in. |
-| `src/include/` | Headers included by the sources. `platform.h` holds every macOS/Linux difference; `machine.h` holds the register convention, the region layout and the stack macros; `dict.h` holds the dictionary format and the macros that define a word. |
-| `lib/` | The part of aforth written in Forth rather than assembly. `aforth.f` is the system file, which `make` copies to `build/aforth.f` and which cold start includes before the prompt; a word goes there when Forth says it more clearly than assembly would and nothing on the dispatch path calls it. |
-| `test/` | `run-tests.sh` holds the helpers and the run order; the cases are in `test/cases/`, one file per kind of word, mirroring `src/words/`. Every case pipes Forth source into the built binary and compares its output, its error output or its exit status. See `docs/system/testing.md`. |
-| `test/bench/` | The benchmarks and the harness that times them. `mix.f` is a loop of stack and arithmetic words and `pick.f` one of `PICK` and `ROLL`; both are standard Forth that runs in arm64th and SwiftForth as well, so the three can be compared. `run-bench.sh` times a list of systems and `timeit.pl` is the stopwatch. Not part of `make test`. See `docs/system/benchmark.md`. |
-| `docker/` | `Dockerfile` for the Linux/ARM64 build and test environment. |
-| `.github/workflows/` | CI. `macos.yml` and `linux.yml` each run `make` then `make test` on their platform. |
+| `src/` | The machine itself, in ARM64 assembly. `aforth.S` is start-up and the command line, `machine.S` is the region and every call into libc, `interpreter.S` is the inner interpreter (code fields such as `DOCOL`, run-time words such as `(LIT)`), and `outer.S` is the `QUIT` loop and the error messages. |
+| `src/words/` | The built-in words, one file per kind, such as `stack.S` and `compile.S`. `interpreter.S` includes them in one assembler pass, and include order is definition order. See `docs/system/inner-interpreter.md` for which file a new word goes in. |
+| `src/include/` | Headers: `platform.h` for macOS/Linux differences, `machine.h` for the registers and the region, `dict.h` for the dictionary format. |
+| `lib/` | `aforth.f`, the system file: words written in Forth, such as `WITHIN` and `VARIABLE`. Cold start includes it before the prompt. `docs/system/startup.md` says which words belong there. |
+| `test/` | `run-tests.sh` and the cases in `test/cases/`, one file per kind of word. See `docs/system/testing.md`. |
+| `test/bench/` | Benchmarks and the harness that times them, not part of `make test`. See `docs/system/benchmark.md`. |
+| `docker/` | The Linux/ARM64 build and test environment. |
+| `.github/workflows/` | CI, one workflow per platform. |
 | `build/` | Build output. Generated, git-ignored. |
-| `docs/` | Durable project context. Sub-folder layout below shows where each kind of doc goes. |
+| `docs/` | Durable project context, laid out below. |
 
 ## Durable context
 
@@ -96,26 +90,16 @@ once shipped, and `docs/working-notes/`, frozen once promoted.
 
 ## Gotchas
 
-- Read `docs/system/assembler.md` before writing assembly. Every trap in it cost
-  a build to find.
-- A libc function that returns `int` leaves its result in `w0`, and the top half
-  of `x0` is unspecified. Compare `w0`, or sign-extend with `sxtw` first, and
-  never test the full `x0`. The two platforms leave different bits up there.
-  See `docs/system/files.md`.
-- Pass no variadic argument to libc. Apple's ARM64 ABI puts one on the stack and
-  the Linux AAPCS puts it in a register, so a call that passes one needs
-  different code per platform. `open` is the one variadic function aforth calls,
-  and only its two named arguments are passed. See `docs/system/files.md`.
-- `stderr` is a libc variable, not a function, and its symbol differs between the
-  platforms: `__stderrp` on macOS, `stderr` on Linux. Reaching it from assembly is
-  awkward, so aforth writes errors to file descriptor 2 with `write`, sizing the
-  message with `strlen`. See `write_stderr` in `src/machine.S`.
-- aforth is Apache-2.0, so it must not link a GPL-licensed library. GNU readline
-  is GPLv3 and therefore out; line editing uses libedit through readline's API.
-  New source files need the two SPDX header lines the existing files carry.
-  See `docs/adr/0002-license-under-apache-2-0.md`.
-- VS Code's C/C++ extension parses the headers in `src/include/` as C++ and
-  leaves `cpptools-srv` processes at full CPU. Those headers are assembly. Point
-  `files.associations` at an assembly grammar for `*.S` and `src/include/*.h`,
-  and list both in `C_Cpp.files.exclude`. `.vscode/` is git-ignored, so each
-  developer sets this up locally.
+- Read `docs/system/assembler.md` before writing assembly.
+- A libc function that returns `int` leaves junk in the top half of `x0`. Test
+  `w0`, or `sxtw` it first. See `docs/system/files.md`.
+- Pass no variadic argument to libc, because the two platforms pass one
+  differently. See `docs/system/files.md`.
+- Write errors with `write_stderr` in `src/machine.S`, not through `stderr`,
+  whose symbol differs per platform.
+- Link no GPL library, because aforth is Apache-2.0 (ADR 0002). That rules out
+  GNU readline. Give every new source file the two SPDX header lines.
+- VS Code's C/C++ extension parses `src/include/*.h` as C++ and pins
+  `cpptools-srv` at full CPU. Map `*.S` and `src/include/*.h` to an assembly
+  grammar in `files.associations`, and list both in `C_Cpp.files.exclude`, in
+  your own `.vscode/`, which is git-ignored.

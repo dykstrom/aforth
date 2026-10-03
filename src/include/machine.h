@@ -66,7 +66,8 @@
 // One anonymous mapping, carved at start-up. The order is deliberate: each
 // stack has an area of our own both above and below it, so an overrun of a few
 // cells touches our own memory instead of faulting. That matters for the build
-// with the guards compiled out.
+// with the guards compiled out, where the slack above the data stack is PAD: an
+// underflow reads the program's PAD, and a push after one writes it.
 //
 //   0x000000  user area                4 KiB
 //   0x001000  index-to-address table  16 KiB
@@ -75,7 +76,7 @@
 //   0x106000  pictured output buffer   4 KiB
 //   0x107000  return stack            64 KiB
 //   0x117000  data stack              64 KiB
-//   0x127000  PAD                      4 KiB   slack above the data stack
+//   0x127000  PAD                      4 KiB   also slack above the data stack
 //   0x128000  transient strings       16 KiB   four buffers of 4 KiB
 //   0x12c000  end
 //
@@ -110,8 +111,9 @@
 // the count rather than into a fifth area nothing would use.
 //
 // Each is as large as the input buffer, so a string parsed out of a line
-// always fits and nothing has to be truncated or report an overflow. The check
-// below is what keeps that true if either size ever moves.
+// always fits. The check below is what keeps that true if either size ever
+// moves. A string EVALUATE runs is not a line and can be longer, so S" and the
+// backslash form test the length there and raise ERR_LINE_TOO_LONG.
 #define SBUF_COUNT      4
 #define SBUF_EACH       (SBUF_SIZE / SBUF_COUNT)
 
@@ -158,7 +160,7 @@
 .error "aforth: a transient string buffer is smaller than the input buffer"
 .endif
 
-// The user area: thirty-one cells at UP, and the input source stack above
+// The user area: thirty-two cells at UP, and the input source stack above
 // them.
 //
 // machine_init sets every one of them before the machine runs, so no cell here
@@ -194,6 +196,9 @@
 #define UV_INIT_ADDR    224     // the path --init named, pointing into argv
 #define UV_INIT_LEN     232     // how long that path is; 0 for no --init
 #define UV_NO_INIT      240     // -1 when --no-init was given, 0 otherwise
+#define UV_LEAVE        248     // the newest LEAVE waiting for a LOOP to
+                                // resolve it, an offset from DBASE; 0 in a
+                                // loop that holds none, -1 outside a loop
 
 // The input source stack.
 //
@@ -218,7 +223,7 @@
 // copied and no line buffer is needed. A file source cannot do that, and
 // include_impl carves its line buffer out of its own C stack frame.
 // The stack starts at 512 rather than just above the cells, so that adding a
-// user variable does not move it. The cells reach 248 now.
+// user variable does not move it. The cells reach 256 now.
 #define SRC_STACK_OFF   512
 #define SRC_LEVELS      8
 #define SRC_SLOT        56
@@ -324,6 +329,13 @@
 
 .macro  RPOP dst
         ldr     \dst, [RSP], #8
+.endm
+
+// Drop n cells from the return stack, without reading them. What (LOOP) does
+// with the loop parameters on the turn that ends the loop, and what UNLOOP
+// does with them when a definition leaves from inside one.
+.macro  RDROP n
+        add     RSP, RSP, #((\n) * 8)
 .endm
 
 // The guards.
@@ -454,13 +466,15 @@
 .endm
 
 // Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the ten after them are raised by the words that meet them — a
-// divide by zero, a pictured output overflow, an input line too long for the
-// buffer, a name the dictionary does not hold, a defining word with no name
-// left on the line, a name too long to count in one byte, a dictionary with no
-// room left, a control-flow word given something that is not a place in the
-// dictionary, a source stack with no level free, a file that ends inside a
-// comment, and a file INCLUDED could not open.
+// first four; the thirteen after them are raised by the words that meet them —
+// a divide by zero, a pictured output overflow, an input line too long for the
+// buffer or a string too long for a transient one, a name the dictionary does
+// not hold, a defining word with no name left on the line, a name too long to
+// count in one byte, a dictionary with no room left, a control-flow word given
+// something that is not a place in the dictionary, a source stack with no
+// level free, a file that ends inside a comment, a file INCLUDED could not
+// open, a deferred word run before IS gave it a word to run, and an ABORT"
+// whose flag was true.
 //
 // The last three are not failures to report. ABORT and QUIT leave the machine
 // the same way an error does, because they must not return to the word that ran
@@ -493,8 +507,10 @@
 #define ERR_SOURCE_TOO_DEEP     13
 #define ERR_UNTERMINATED_COMMENT 14
 #define ERR_OPEN_FAILED         15
-#define ERR_REPORTED            16
-#define ERR_ABORT               17
-#define ERR_QUIT                18
+#define ERR_DEFER_UNSET         16
+#define ERR_ABORT_QUOTE         17
+#define ERR_REPORTED            18
+#define ERR_ABORT               19
+#define ERR_QUIT                20
 
 #endif // AFORTH_MACHINE_H

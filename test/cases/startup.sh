@@ -31,6 +31,7 @@ printf '%s\n' ': NAMED-INIT 11 ;' > "$INIT_DIR/named.f"
 printf '%s\n' ': FIRST-INIT 1 ;'  > "$INIT_DIR/first.f"
 printf '%s\n' ': SECOND-INIT 2 ;' > "$INIT_DIR/second.f"
 printf '1 1 +\nNOT-A-WORD\n'      > "$INIT_DIR/broken/aforth/init.f"
+printf ': T 1 ABORT" no config" ;\n1 1 +\nT\n' > "$INIT_DIR/aborts.f"
 
 # From here to the end of the file, aforth looks for the user's init.f in a
 # temporary directory. It is set before the first case rather than beside the
@@ -152,6 +153,14 @@ exits  "and the status is still 0" '1 .' 0 "--init $INIT_DIR/nothing-here.f"
 
 prints "--init names a file that is there" \
   '1 .' '1  ok' "--init $ARG_DIR/some.f"
+
+# ABORT" in an init file reports the way any error there does: the message, the
+# file and the line, and then the prompt with the stacks empty.
+raises 'ABORT" in an --init file names the file and the line' '1 .' \
+  "aforth: no config
+aforth:   in $INIT_DIR/aborts.f, line 3" "--init $INIT_DIR/aborts.f"
+prints "and the prompt comes up with the stacks empty" '.S' '<0>  ok' \
+  "--init $INIT_DIR/aborts.f"
 
 # --init with an empty string after it named a file too, badly. It is answered
 # rather than quietly turned into the config file. The binary is run directly

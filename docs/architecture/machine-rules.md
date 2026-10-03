@@ -24,6 +24,16 @@ The descriptive side — what the code does today — is in
 - aforth MUST NOT generate code at runtime. Generated code on macOS/ARM64 requires W^X handling and
   a JIT entitlement, and both platforms require instruction-cache maintenance.
 - Source: [ADR 0005](../adr/0005-indirect-threading-with-index-code-fields.md).
+- Every entry MUST have a does-cell directly below its code field, whether or not `DOES>` uses it.
+  The does-cell MUST hold an offset from the dictionary base, or 0. `DODOES` and `(DOES>)` find it
+  at a fixed distance from the code field, and `CFOFF` counts it in every entry, so a change to the
+  entry layout MUST keep both true. Source:
+  [ADR 0013](../adr/0013-give-every-entry-a-does-cell.md).
+- Data that is fixed when the binary is built, and that no program writes, MUST live outside the
+  dictionary image, in the read-only data of a source file not included between `DICT_BEGIN` and
+  `DICT_END`. Data that a program may change, or that must travel with a saved dictionary, MUST
+  stay in the image. Source:
+  [ADR 0014](../adr/0014-keep-fixed-system-data-outside-the-image.md).
 
 ## Machine model
 

@@ -8,8 +8,9 @@
 // sdiv with msub for the remainder.
 //
 // Division truncates toward zero, so / and MOD and /MOD are the symmetric
-// pair, and */MOD divides with SM/REM to match them. Forth-2012 leaves that
-// choice to the implementation and asks only that it be consistent.
+// pair, and */MOD in lib/aforth.f divides with SM/REM to match them.
+// Forth-2012 leaves that choice to the implementation and asks only that it be
+// consistent.
 //
 // Included by src/interpreter.S between DICT_BEGIN and DICT_END. Not a
 // translation unit of its own: the entry macros track their place in the image
@@ -131,6 +132,15 @@
         mov     TOS, x2
         NEXT
 
+// S>D widens a single to a double. The single stays as the low half, and the
+// high half is its sign copied into every bit, which one arithmetic shift is.
+        DEFCODE "S>D", 3, s_to_d        // ( n -- d )
+        NEED    1
+        ROOM    1
+        asr     x0, TOS, #63
+        DPUSH   x0
+        NEXT
+
 // UM/MOD divides a double by a single. ARM64 divides 64 bits by 64, not 128,
 // so the work is in udiv128 below.
         DEFCODE "UM/MOD", 6, um_slash_mod       // ( ud u1 -- u2 u3 )
@@ -199,24 +209,6 @@
 3:      DSETM   0, x0
         mov     TOS, x1
         NEXT
-
-// */ and */MOD are the two words defined as token lists rather than in
-// assembly, and it is not for want of an instruction. Both multiply to a
-// double and divide that, which is the whole point of them: it is what keeps
-// n1 n2 */ n3 exact when the product does not fit a cell. M* and SM/REM
-// already do that work, so a primitive would only be a wrapper around this
-// list.
-        DEFWORD "*/MOD", 5, star_slash_mod      // ( n1 n2 n3 -- n4 n5 )
-        TOKEN   to_r                    // hold the divisor
-        TOKEN   m_star                  // n1 n2 -> a double
-        TOKEN   r_from
-        TOKEN   sm_slash_rem
-        ENDWORD
-
-        DEFWORD "*/", 2, star_slash     // ( n1 n2 n3 -- n4 )
-        TOKEN   star_slash_mod
-        TOKEN   nip                     // drop the remainder
-        ENDWORD
 
         DEFCODE "AND", 3, and           // ( x1 x2 -- x3 )
         NEED    2

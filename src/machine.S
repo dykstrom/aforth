@@ -45,6 +45,61 @@ str_dot_config:
 str_init_file:
         .asciz  "/aforth/init.f"
 
+// What ENVIRONMENT? answers, one row per query it knows.
+//
+// A row is the name's length in one byte, the name, zeroes up to the next
+// cell, a cell saying how many value cells follow, and then those cells in the
+// order ENVIRONMENT? pushes them. A length of 0 ends the table.
+//
+// It lives here rather than beside ENVIRONMENT? in src/words/parsing.S for the
+// reason spaces_run does. It is outside the dictionary image, too, and that
+// suits it: every value is fixed when the binary is built, so the table always
+// describes the binary that is running and costs no dictionary space
+// (ADR 0014).
+.macro  ENVQ name, len, count
+        .byte   \len
+1:      .ascii  "\name"
+2:
+.if (2b - 1b) != \len
+.error "aforth: an environment query's declared length does not match its name"
+.endif
+        .p2align        3
+        .quad   \count
+.endm
+
+        .p2align        3
+        .globl  env_table
+env_table:
+        ENVQ    "/COUNTED-STRING", 15, 1
+        .quad   255                     // a count is one byte
+        ENVQ    "/HOLD", 5, 1
+        .quad   HOLD_SIZE
+        ENVQ    "/PAD", 4, 1
+        .quad   PAD_SIZE
+        ENVQ    "ADDRESS-UNIT-BITS", 17, 1
+        .quad   8
+        ENVQ    "MAX-CHAR", 8, 1
+        .quad   255                     // a character is a byte (ADR 0004)
+        ENVQ    "MAX-N", 5, 1
+        .quad   0x7fffffffffffffff
+        ENVQ    "MAX-U", 5, 1
+        .quad   -1
+        ENVQ    "MAX-D", 5, 2
+        .quad   -1                      // the low cell, pushed first
+        .quad   0x7fffffffffffffff
+        ENVQ    "MAX-UD", 6, 2
+        .quad   -1
+        .quad   -1
+        ENVQ    "RETURN-STACK-CELLS", 18, 1
+        .quad   RSTACK_SIZE / 8
+        ENVQ    "STACK-CELLS", 11, 1
+        .quad   DSTACK_SIZE / 8
+        ENVQ    "FLOORED", 7, 1
+        .quad   0                       // / truncates toward zero
+        ENVQ    "CORE", 4, 1
+        .quad   -1                      // every CORE word is present
+        .byte   0
+
         .text
 
 // Allocate and carve the region, and set the machine registers.
@@ -142,6 +197,12 @@ machine_init:
         str     xzr, [UP, #UV_ERR_ADDR]
         str     xzr, [UP, #UV_ERR_LEN]
 
+        // No loop is being compiled. That is a different state from a loop
+        // holding no LEAVE, which is 0, and telling them apart is how LEAVE
+        // refuses a definition that has no loop to leave.
+        mov     x1, #-1
+        str     x1, [UP, #UV_LEAVE]
+
         // The terminal is the source at the bottom, with nothing under it.
         str     xzr, [UP, #UV_SOURCE_ID]
         str     xzr, [UP, #UV_SRC_DEPTH]
@@ -216,7 +277,8 @@ hold_overflow:
         FUNC_SIZE(hold_overflow)
 
 // Remember the name an error names. It is at x0, x1 bytes long, and it goes in
-// the user area for machine_quit to print after the message.
+// the user area for machine_quit to print after the message. ABORT" puts its
+// whole message here the same way.
 //
 // The name points into the input buffer, which the next REFILL overwrites. The
 // message is written before that happens, so the two never race.

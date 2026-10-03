@@ -12,8 +12,9 @@
 //
 // A number is built in the pictured output buffer, right to left, by the words
 // Forth-2012 gives for it, and . U. .R U.R are token lists over those words
-// rather than code of their own. That is what keeps BASE honest: there is one
-// place a digit is made, and every word that prints a number goes through it.
+// rather than code of their own: . and U. at the end of this file, .R and U.R
+// in lib/aforth.f. That is what keeps BASE honest: there is one place a digit
+// is made, and every word that prints a number goes through it.
 // .S and WORDS are assembly, because each loops and the loop reads more easily
 // than the token list that could express it; both hold their digits through
 // the same routine. See docs/system/output.md.
@@ -360,6 +361,12 @@ hold_write:
 // none of them has a base of its own: every digit any of them prints is made
 // by # , which reads BASE.
 //
+// These three are assembly rather than Forth in lib/aforth.f, where .R and U.R
+// are, so that a binary with no aforth.f beside it can still print a number.
+// Cold start reports the missing file and the prompt comes up anyway, and . is
+// the first word anyone types to see whether it works. . and U. compile SPACE,
+// so SPACE stays with them.
+//
 // FALSE stands in for the zero high half of a double. TOKEN emits one cell, so
 // a built-in list cannot carry a literal the way a compiled definition does,
 // and FALSE is the cell with no bits set — the zero a double needs above a
@@ -389,37 +396,4 @@ hold_write:
         TOKEN   num_greater
         TOKEN   type
         TOKEN   space
-        ENDWORD
-
-// .R and U.R pad on the left to the width they are given, and print nothing
-// extra: a number already wider than the field is printed in full, because
-// SPACES does nothing with a count of zero or less.
-        DEFWORD ".R", 2, dot_r          // ( n1 n2 -- )
-        TOKEN   to_r                    // hold the width
-        TOKEN   dup
-        TOKEN   abs
-        TOKEN   false
-        TOKEN   less_num
-        TOKEN   num_s
-        TOKEN   rot
-        TOKEN   sign
-        TOKEN   num_greater
-        TOKEN   r_from
-        TOKEN   over
-        TOKEN   minus                   // the width less the length
-        TOKEN   spaces
-        TOKEN   type
-        ENDWORD
-
-        DEFWORD "U.R", 3, u_dot_r       // ( u n -- )
-        TOKEN   to_r
-        TOKEN   false
-        TOKEN   less_num
-        TOKEN   num_s
-        TOKEN   num_greater
-        TOKEN   r_from
-        TOKEN   over
-        TOKEN   minus
-        TOKEN   spaces
-        TOKEN   type
         ENDWORD

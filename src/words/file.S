@@ -443,10 +443,3 @@ inc_return:
         bl      included_impl
         RAISE
         NEXT
-
-// INCLUDE is PARSE-NAME and INCLUDED. A name it does not find on the line is a
-// length of 0, which INCLUDED raises ERR_NO_NAME on.
-        DEFWORD "INCLUDE", 7, include   // ( i*x "<spaces>name" -- j*x )
-        TOKEN   parse_name
-        TOKEN   included
-        ENDWORD

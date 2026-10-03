@@ -62,6 +62,7 @@ guards "2*"      '2*'      0
 guards "2/"      '2/'      0
 guards "UM*"     'UM*'     1
 guards "M*"      'M*'      1
+guards "S>D"     'S>D'     0
 guards "UM/MOD"  'UM/MOD'  2
 guards "SM/REM"  'SM/REM'  2
 guards "FM/MOD"  'FM/MOD'  2
@@ -88,6 +89,8 @@ guards "0>"      '0>'      0
 
 guards "@"       '@'       0
 guards "!"       '!'       1
+guards "2@"      '2@'      0
+guards "2!"      '2!'      2
 guards "C@"      'C@'      0
 guards "C!"      'C!'      1
 guards "+!"      '+!'      1
@@ -118,6 +121,7 @@ guards "PARSE"   'PARSE'   0
 guards "WORD"    'WORD'    0
 guards "COUNT"   'COUNT'   0
 guards "FIND"    'FIND'    0
+guards "ENVIRONMENT?" 'ENVIRONMENT?' 1
 guards ">NUMBER" '>NUMBER' 3
 guards "?NUMBER" '?NUMBER' 1
 guards "EVALUATE" 'EVALUATE' 1
@@ -132,6 +136,26 @@ guards "FILE-STATUS" 'FILE-STATUS' 1
 
 guards "LITERAL"  'LITERAL'  0
 guards "CONSTANT" 'CONSTANT' 0
+guards "VALUE"    'VALUE'    0
+guards ">BODY"    '>BODY'    0
+guards "BUFFER:"  'BUFFER: B' 0
+guards "DEFER@"   'DEFER@'   0
+guards "DEFER!"   'DEFER!'   1
+
+# TO and IS want the cell they store, and their name has to be there for the
+# guard to be what fires, so each line makes the word first. (TO) is what both
+# compile, and it is reached through a definition that holds one.
+guards "TO"       '0 VALUE V TO V'          0
+guards "IS"       'DEFER D IS D'            0
+guards "(TO)"     '0 VALUE V : T TO V ; T'  0
+
+# ABORT" wants a flag under its message both ways. Compiled, (S") pushes the
+# message, so the one cell missing is the flag, as it is at the prompt.
+guards 'ABORT"'   'ABORT" x"' 0
+guards '(ABORT")' ': T ABORT" x" ; T' 0
+
+# COMPILE, is , under a second name, so the guard it reports is the one , has.
+guards "COMPILE," 'COMPILE,' 0
 
 # The control-flow words read the data stack because the control-flow stack is
 # the data stack. Each checks its depth before it looks at what is there.
@@ -141,11 +165,46 @@ guards "UNTIL"   'UNTIL'   0
 guards "AGAIN"   'AGAIN'   0
 guards "WHILE"   'WHILE'   0
 guards "REPEAT"  'REPEAT'  1
+guards "LOOP"    'LOOP'    1
+guards "+LOOP"   '+LOOP'   1
+guards "ENDOF"   'ENDOF'   0
+guards "ENDCASE" 'ENDCASE' 0
+
+# ENDCASE resolves as many arms as it finds, so its depth is checked on every
+# turn of the walk rather than once. A stack with no marker on it runs out.
+raises "ENDCASE without a marker" 'HERE ENDCASE' 'aforth: data stack underflow'
+
+# The three words that read a loop's frame check the return stack, which is
+# empty at the prompt because nothing but a definition puts anything there.
+guards "I"       'I'       0 "$RS_UNDERFLOW"
+guards "J"       'J'       0 "$RS_UNDERFLOW"
+guards "UNLOOP"  'UNLOOP'  0 "$RS_UNDERFLOW"
 
 # (0BRANCH) is hidden, so it has to be reached through a word that compiles it
 # rather than by name.
 raises "(0BRANCH) guards its depth" ': T IF THEN ;
 T' 'aforth: data stack underflow'
+
+# (DO) and (LOOP) are hidden too, and each is reached through the word that
+# compiles it. (DO) takes the limit and the index off the data stack. (LOOP)
+# wants the frame (DO) left on the return stack, and the only way to take that
+# away from it is an unbalanced R> inside the loop.
+raises "(DO) guards its depth" ': T DO LOOP ;
+1 T' 'aforth: data stack underflow'
+raises "(LOOP) guards the return stack" ': T 3 0 DO R> DROP R> DROP LOOP ;
+T' "$RS_UNDERFLOW"
+
+# (+LOOP) takes its step off the data stack and (?DO) its limit and index, so
+# each reaches a depth guard through the word that compiles it.
+raises "(+LOOP) guards its depth" ': T 3 0 DO +LOOP ;
+T' 'aforth: data stack underflow'
+raises "(?DO) guards its depth" ': T ?DO LOOP ;
+1 T' 'aforth: data stack underflow'
+
+# (DOES>) leaves the defining word as EXIT does, so it needs the address DOCOL
+# saved, and an R> in the defining part is the way to take that away.
+raises "(DOES>) guards the return stack" ': D CREATE R> DROP DOES> ;
+D X' "$RS_UNDERFLOW"
 
 # The four token lists, each of which reaches its underflow before it has
 # written anything, which is what keeps this file silent.
@@ -229,13 +288,33 @@ room "PARSE-NAME" 'PARSE-NAME'
 room "PARSE"      'DUP BL PARSE'
 room "COUNT"      'DUP COUNT'
 room "FIND"       'DUP FIND'
+room "2@"         'DUP 2@'
+room "S>D"        'DUP S>D'
+
+# ENVIRONMENT? takes two cells and gives back three for a two-cell answer, so
+# the flag is the push that overflows. The DROP makes room for the string.
+room "ENVIRONMENT?" 'DROP S" MAX-D" ENVIRONMENT?'
 room "'"          "DUP ' DUP"
 room "?NUMBER"    'DUP ?NUMBER'
 room "STATE"      'DUP STATE'
 room "HERE"       'DUP HERE'
 room "UNUSED"     'DUP UNUSED'
+room "PAD"        'DUP PAD'
+room ":NONAME"    'DUP :NONAME'
+room "ACTION-OF"  "DEFER D DUP ACTION-OF D"
 room "IF"         'DUP IF'
 room "BEGIN"      'DUP BEGIN'
+# DO and ?DO each leave two items, so neither needs the DUP the lines above use.
+room "DO"         'DO'
+room "?DO"        '?DO'
+room "CASE"       'DUP CASE'
+room "OF"         'DUP OF'
+
+# I and J read the return stack before the data stack, as the four below do, so
+# each line puts cells there first and fills the gap that left. J reads the
+# third cell down, so it takes three.
+room "I"          '>R DUP DUP I'
+room "J"          '>R >R >R DUP DUP DUP DUP J'
 
 # BEGIN takes the last cell here, in place of the DUP the other lines use:
 # WHILE needs something below it as well as room above it.
@@ -246,11 +325,13 @@ room "WHILE"      'BEGIN WHILE'
 room "DOCON"      '1 CONSTANT ONE DUP ONE'
 room "DOVAR"      'VARIABLE V DUP V'
 room "(LIT)"      ': P 1 ; DUP P'
+room "DODOES"     ': D CREATE DOES> ; D X DUP X'
 
 # S" pushes two, so one free cell is already too few and no DUP is needed to
 # use the last one up. (S") is hidden, and reached the way (LIT) is: through a
 # definition that carries a string.
 room 'S"'         'S" x"'
+room 'S\"'        'S\" x"'
 room '(S")'       ': P S" x" ; P'
 room "SOURCE-ID"  'DUP SOURCE-ID'
 room "R/O"        'DUP R/O'
@@ -278,3 +359,9 @@ raises "2>R guards its room"   "$RS_ALMOST
 1 2 2>R"  'aforth: return stack overflow'
 raises "DOCOL guards its room" "$RS_FULL
 SPACE"    'aforth: return stack overflow'
+# DODOES pushes the caller's instruction pointer as DOCOL does. The word is
+# made before the return stack is filled, because making it runs DOCOL.
+raises "DODOES guards its room" ": D CREATE DOES> ;
+D X
+$RS_FULL
+X"        'aforth: return stack overflow'

@@ -45,6 +45,10 @@ that must run elsewhere cannot rely on it. The word is in
 `src/words/compile.S` with `S"`, because what it mostly does is compile; see
 [compiling.md](compiling.md).
 
+`.(` is the word for printing while a file loads. It is `[CHAR] ) PARSE TYPE`
+and immediate, in `lib/aforth.f`, so it prints whether the loop is interpreting
+or compiling and compiles nothing into a definition.
+
 ## Numbers are built in the hold buffer
 
 `<# # #S HOLD SIGN #>` are the standard's own words and they work the standard's

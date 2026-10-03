@@ -30,6 +30,11 @@ printf '1 2 ABORT 3\n'                             > "$FILE_DIR/ab.f"
 printf '1 2 QUIT 3\n'                              > "$FILE_DIR/q.f"
 printf '." a" CR\nINCLUDE %s/bad.f\n." b"\n' \
   "$FILE_DIR"                                     > "$FILE_DIR/outer.f"
+printf ': T 1 ABORT" disk full" ;\nT\n'            > "$FILE_DIR/abq.f"
+printf '1 ABORT" said in the file"\n'             > "$FILE_DIR/abqi.f"
+printf '1 ABORT" fel p\303\245 disken"\n'           > "$FILE_DIR/abqu.f"
+printf '\nINCLUDE %s/abq.f\n' \
+  "$FILE_DIR"                                     > "$FILE_DIR/abq-outer.f"
 
 prints "R/O is a fam"  'R/O .'  '0  ok'
 
@@ -257,6 +262,28 @@ raises "a file that included one is named too" \
   "INCLUDE $FILE_DIR/outer.f" "aforth: undefined word: hello
 aforth:   in $FILE_DIR/bad.f, line 1
 aforth:   included from $FILE_DIR/outer.f, line 2"
+
+# ABORT" is a failure with a message of its own, so it takes the same path and
+# gets the same lines under it. Typed in the file, its message lies in the
+# file's line buffer, which is still there when include_impl reports.
+raises 'ABORT" in a file names the file and the line' \
+  "INCLUDE $FILE_DIR/abq.f" "aforth: disk full
+aforth:   in $FILE_DIR/abq.f, line 2"
+raises 'ABORT" in a file names the file that included it' \
+  "INCLUDE $FILE_DIR/abq-outer.f" "aforth: disk full
+aforth:   in $FILE_DIR/abq.f, line 2
+aforth:   included from $FILE_DIR/abq-outer.f, line 2"
+raises 'ABORT" typed in a file keeps its message' \
+  "INCLUDE $FILE_DIR/abqi.f" "aforth: said in the file
+aforth:   in $FILE_DIR/abqi.f, line 1"
+
+# The message is bytes, and a UTF-8 one comes out as it went in. It is read
+# from a file because a typed line goes through libedit, which drops every
+# byte above 127 when the process runs in the C locale, as the Linux container
+# does.
+raises 'ABORT" passes UTF-8 through' \
+  "INCLUDE $FILE_DIR/abqu.f" "aforth: fel på disken
+aforth:   in $FILE_DIR/abqu.f, line 1"
 
 # INCLUDE-FILE is handed a descriptor and never sees a name.
 raises "INCLUDE-FILE has no name to give" \

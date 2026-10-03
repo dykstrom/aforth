@@ -66,9 +66,12 @@ case; see [testing.md](testing.md) for the one name that check cannot really
 see.
 
 `COUNT` turns a counted string into the address and length every other word
-takes. `CHAR` is `PARSE-NAME DROP C@`, and `[CHAR]`, which compiles that byte
-rather than pushing it, is in `src/words/compile.S` with the other words that
-compile; see [compiling.md](compiling.md).
+takes. `CHAR` is `PARSE-NAME DROP C@`, in `lib/aforth.f`. `[CHAR]` compiles
+that byte rather than pushing it and could be `CHAR POSTPONE LITERAL` beside it,
+but it is written in assembly in `src/words/compile.S` because it raises
+`ERR_NO_NAME` when there is no name, and a word written in Forth cannot raise
+one of aforth's errors until there is `THROW`. See [A missing
+name](#a-missing-name) and [compiling.md](compiling.md).
 
 ## The search
 
@@ -97,6 +100,41 @@ there. `interpret_source` reports the same error through the same routine, so
 the two print the same message; see
 [outer-interpreter.md](outer-interpreter.md) for why one raises and one
 returns.
+
+## A missing name
+
+A word that parses a name can reach the end of the line with no name found.
+`PARSE-NAME` then gives a length of 0, at the address just past the parse area.
+Forth-2012 makes this an ambiguous condition, and aforth's words handle it in
+three different ways:
+
+| Words | With no name |
+|-------|--------------|
+| `:` `CREATE` `CONSTANT` `VALUE` `VARIABLE` `BUFFER:` `DEFER` `MARKER` `[CHAR]` `INCLUDE` | raise `ERR_NO_NAME`, `aforth: name expected` |
+| `'` `[']` `POSTPONE` `TO` `IS` `ACTION-OF` | search for the empty name, find nothing, and raise `ERR_UNDEFINED_WORD`, so the message is `aforth: undefined word` with no name after it |
+| `CHAR` | checks nothing and pushes the byte just past the parse area |
+
+All three are allowed, but they ought to agree. The suite fixes the first two as
+they stand, in `test/cases/compile.sh` and `test/cases/parsing.sh`, so making
+them agree will change a case on purpose. There is no case for `CHAR`, because
+the byte it gives is not one worth fixing in place. `CHAR` is the one a program
+can be misled by, because it hands back a value. Once there is `THROW`, `CHAR`
+can raise `ERR_NO_NAME` from `lib/aforth.f`, and `[CHAR]` can then move there
+as `CHAR POSTPONE LITERAL`.
+
+## Asking about the system
+
+`ENVIRONMENT?` looks a string up in `env_table` and pushes the answer's cells
+and true, or false alone. The table is in `src/machine.S`, not beside the word,
+because data fixed when the binary is built stays outside the dictionary image
+(ADR 0014). The string is matched the way `dict_find` matches a name, with the
+same folding, so `max-n` asks what `MAX-N` asks.
+
+It answers thirteen queries: `/COUNTED-STRING`, `/HOLD`, `/PAD`,
+`ADDRESS-UNIT-BITS`, `MAX-CHAR`, `MAX-N`, `MAX-U`, `MAX-D`, `MAX-UD`,
+`RETURN-STACK-CELLS`, `STACK-CELLS`, `FLOORED` and `CORE`. The sizes come from
+`src/include/machine.h`. `FLOORED` is false because `/` is symmetric, and
+`CORE` is true because every CORE word is present.
 
 ## Numbers
 

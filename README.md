@@ -8,18 +8,22 @@ A Forth system written in ARM64 assembly, targeting Forth-2012.
 ## Status
 
 Early development. aforth reads Forth at a prompt and runs it until `BYE` or
-end of input. The stack, arithmetic, logic, memory, output, input and parsing
-words are in place. A user can define words with `:` and `;`, `CREATE`,
-`CONSTANT` and `VARIABLE`, and branch inside them with `IF ELSE THEN`,
-`BEGIN UNTIL WHILE REPEAT AGAIN` and `RECURSE`. A program can write a string
-with `S"` or `."`, and interpret one with `EVALUATE`. It can open and read a
-file with `OPEN-FILE` and `READ-LINE`, and load another program with
-`INCLUDE`.
+end of input. In the terms Forth-2012 uses to label a system, aforth is:
+
+- Providing the Core word set
+- Providing name(s) from the Core Extensions word set: all but `C"`, `HOLDS`,
+  `RESTORE-INPUT`, `SAVE-INPUT` and `[COMPILE]`
+- Providing name(s) from the File-Access word set: all but `BIN`,
+  `CREATE-FILE`, `DELETE-FILE`, `R/W`, `RESIZE-FILE`, `W/O`, `WRITE-FILE` and
+  `WRITE-LINE`
+- Providing name(s) from the File-Access Extensions word set: `FILE-STATUS` and
+  `INCLUDE`
+- Providing name(s) from the Programming-Tools word set: `.S` and `WORDS`
+- Providing name(s) from the Programming-Tools Extensions word set: `BYE`
 
 At start-up aforth reads two files: the system file `aforth.f` that ships
 beside the binary, and the user's own `init.f` under
-`$XDG_CONFIG_HOME/aforth/`. There is no counted loop and no way to write a
-file.
+`$XDG_CONFIG_HOME/aforth/`.
 
 ## AI assistance
 
@@ -50,6 +54,5 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 - [Design goals](docs/architecture/design-goals.md) — what aforth must be
 - [Machine rules](docs/architecture/machine-rules.md) — the rules for writing it
-- [Open design questions](docs/working-notes/open-design-questions.md) — what is still undecided
 - [docs/](docs/) — how the documentation is organized
 - [AGENTS.md](AGENTS.md) — project context for coding agents

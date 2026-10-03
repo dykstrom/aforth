@@ -36,7 +36,7 @@ those names mirror `src/words/`, so a new word's case has one obvious home.
 | `control.sh` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN`, `EXIT` and `RECURSE` |
 | `outer.sh` | the `QUIT` loop, its error messages, `ABORT`, `QUIT`, `BYE` |
 | `startup.sh` | the command line, and the two files cold start reads |
-| `system.sh` | the words `lib/aforth.f` defines rather than the assembly |
+| `system.sh` | that cold start loads `lib/aforth.f` at all, and `WITHIN` |
 | `guards.sh` | the depth and room guard of every word that reads or fills a stack |
 
 ## Writing a case
@@ -101,6 +101,12 @@ suite runs as root, which it does in the Linux container. Such a case tests
 `id -u` and prints `skip -` instead, the way the depth guards do in the build
 that compiles them out.
 
+A case whose typed input holds a byte above 127 fails in the Linux container
+and passes on macOS. The container runs in the C locale, and libedit drops
+those bytes from a typed line there. Lines read from a file do not go through
+libedit, so such a case puts its input in a fixture file and includes it, as
+the UTF-8 case for `ABORT"` in `test/cases/file.sh` does.
+
 A case runs the binary itself when no helper can give it what it needs. Every
 such case is in `test/cases/outer.sh` or `test/cases/startup.sh`.
 
@@ -129,6 +135,13 @@ process put it. A case about the allocation pointer prints how far it moved —
 `HERE 16 ALLOT HERE SWAP - .` — and one about the dictionary's end asks for one
 byte more than `UNUSED` says is left, rather than for a number that depends on
 how big the built-in dictionary happens to be.
+
+Three cases in `compile.sh` are the exception. Each one leaves room for exactly
+one entry, `UNUSED 32 - ALLOT`, so that `: Z` fits and the token, literal or
+string after it fills the dictionary. The 32 is the size of an entry with a
+one-byte name, so it must change when the entry layout changes. A wrong number
+does not fail the case: `: Z` then fills the dictionary itself and prints the
+same message. Check that the line after `: Z` is the one that fails.
 
 ## The depth guards
 
@@ -161,14 +174,15 @@ emptied return stack reads a cell nobody wrote instead of reporting anything.
 
 ## Every word needs a case
 
-The last check takes the name out of every `DEFCODE` and `DEFWORD` in
-`src/words/*.S` and `src/interpreter.S`, and out of every colon definition in
-`lib/*.f`, and fails naming any word no case mentions. A hidden word is skipped:
+The last check takes the name out of every `DEFCODE`, `DEFWORD` and `DEFALIAS`
+in `src/words/*.S` and `src/interpreter.S`, and out of every colon definition
+in `lib/*.f`, and fails naming any word no case mentions. A hidden word is skipped:
 `(STOP)` cannot be reached by name.
 
 The system file is in there because a word written in Forth is as much a word of
 aforth's as one written in assembly, and just as easy to add and forget. Its
-cases go in `test/cases/system.sh`.
+cases go in the file for its kind of word, as they would if it were written in
+assembly: `*/` in `arithmetic.sh`, `[']` in `compile.sh`.
 
 A name the source escapes is unescaped first — `\` and `S"` are two characters
 in a `DEFCODE` and one byte each in the dictionary — and each case file is split

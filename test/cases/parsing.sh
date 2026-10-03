@@ -133,3 +133,46 @@ prints "?NUMBER leaves a name it cannot convert" \
 
 prints "CHAR takes the first byte of a name" 'CHAR A .'    '65  ok'
 prints "CHAR takes only the first"           'CHAR abc .'  '97  ok'
+
+# ENVIRONMENT? answers from a table of what aforth can state about itself: the
+# answer's cells and true, or false alone for anything else. A one-cell answer
+# is checked with .S, which shows the flag came after it.
+prints "ENVIRONMENT? knows /COUNTED-STRING" \
+  'S" /COUNTED-STRING" ENVIRONMENT? .S' '<2> 255 -1  ok'
+prints "ENVIRONMENT? knows /HOLD" 'S" /HOLD" ENVIRONMENT? .S' '<2> 4096 -1  ok'
+prints "ENVIRONMENT? knows ADDRESS-UNIT-BITS" \
+  'S" ADDRESS-UNIT-BITS" ENVIRONMENT? .S' '<2> 8 -1  ok'
+prints "ENVIRONMENT? knows MAX-CHAR" \
+  'S" MAX-CHAR" ENVIRONMENT? .S' '<2> 255 -1  ok'
+prints "ENVIRONMENT? knows MAX-N" \
+  'S" MAX-N" ENVIRONMENT? .S' '<2> 9223372036854775807 -1  ok'
+prints "ENVIRONMENT? knows MAX-U" \
+  'S" MAX-U" ENVIRONMENT? . U.' '-1 18446744073709551615  ok'
+prints "ENVIRONMENT? knows RETURN-STACK-CELLS" \
+  'S" RETURN-STACK-CELLS" ENVIRONMENT? .S' '<2> 8192 -1  ok'
+prints "ENVIRONMENT? knows STACK-CELLS" \
+  'S" STACK-CELLS" ENVIRONMENT? .S' '<2> 8192 -1  ok'
+prints "ENVIRONMENT? says division is not floored" \
+  'S" FLOORED" ENVIRONMENT? .S' '<2> 0 -1  ok'
+prints "ENVIRONMENT? says CORE is complete" \
+  'S" CORE" ENVIRONMENT? .S' '<2> -1 -1  ok'
+
+# A double is two cells with the high one on top, so the flag comes off first,
+# then the high cell, then the low one.
+prints "ENVIRONMENT? knows MAX-D" \
+  'S" MAX-D" ENVIRONMENT? . . U.' '-1 9223372036854775807 18446744073709551615  ok'
+prints "ENVIRONMENT? knows MAX-UD" \
+  'S" MAX-UD" ENVIRONMENT? . U. U.' '-1 18446744073709551615 18446744073709551615  ok'
+
+prints "ENVIRONMENT? knows /PAD" 'S" /PAD" ENVIRONMENT? .S' '<2> 4096 -1  ok'
+
+# Anything else is one false and nothing more. A prefix of a known query is not
+# that query.
+prints "ENVIRONMENT? does not know FNORD" 'S" FNORD" ENVIRONMENT? .S' '<1> 0  ok'
+prints "ENVIRONMENT? does not know a prefix" 'S" MAX" ENVIRONMENT? .S' '<1> 0  ok'
+prints "ENVIRONMENT? does not know the empty string" \
+  'S" " ENVIRONMENT? .S' '<1> 0  ok'
+
+# The query folds ASCII letters the way name lookup does.
+prints "ENVIRONMENT? ignores case" \
+  'S" max-n" ENVIRONMENT? .S' '<2> 9223372036854775807 -1  ok'

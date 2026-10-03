@@ -32,6 +32,13 @@ divisor an ambiguous condition and permits exactly this.
 `UM*`, `M*` and the double-dividend words keep the high cell above the low one,
 so a case reading `0 1 3 UM/MOD` is the double 2^64 divided by 3.
 
+`S>D` makes a double from a single. The single is the low cell, and the high
+cell is its sign copied into every bit, which one arithmetic shift gives.
+
+`2!` and `2@` put the item that was on top at the lower address, as Forth-2012
+requires. So a double stored with `2!` has its high cell first in memory, and
+`2@` reads it back in the same order.
+
 ARM64 divides 64 bits by 64, not 128, so `UM/MOD` and its signed neighbours go
 through `udiv128` in `src/words/arithmetic.S`: one `udiv` when the high cell is
 empty, and otherwise Knuth's algorithm D on 32-bit digits, which is two more

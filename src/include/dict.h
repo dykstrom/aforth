@@ -23,6 +23,8 @@
 //   +9    byte   name length in bytes, 0 to 255
 //   +10   bytes  the name, UTF-8, stored as typed
 //         pad    to the next cell
+//   +N-8  cell   does-cell: the token list a DOES> word runs, as an offset
+//                from DBASE, or 0 for every other word
 //   +N    cell   code field: the index of the routine that runs this word
 //   +N+8  cells  parameter field: a colon definition's token list
 //
@@ -36,6 +38,11 @@
 //
 // The name is not cell-aligned. Nothing reads it a cell at a time: comparison
 // is byte by byte, because a character is a byte (ADR 0004).
+//
+// The does-cell is below the code field rather than above it, so that the body
+// starts one cell past the code field in every entry. DOVAR, >BODY and
+// dispatch never look at it; only DODOES reads it and only (DOES>) writes it.
+// It costs a cell on every entry, including the ones that never use it.
 #define ENT_LINK        0
 #define ENT_FLAGS       8
 #define ENT_COUNT       9
@@ -44,15 +51,20 @@
 #define F_IMMEDIATE     0x01    // runs even while compiling
 #define F_HIDDEN        0x02    // name lookup walks past it
 
+#define CF_DOES         -8      // the does-cell, from the code field
+
 // How far the code field is from the start of an entry whose name is \len
-// bytes long: past the fixed fields and the name, padded to the next cell.
+// bytes long: past the fixed fields and the name, padded to the next cell, and
+// past the does-cell.
 //
-// The HEADER macro below does this arithmetic at assembly time. Three routines
-// do it at run time — dict_find, header_impl and RECURSE — and all three come
-// here for it, so there is one place it can be got wrong. \dst may be \len.
+// The HEADER macro below does this arithmetic at assembly time. Four routines
+// do it at run time — dict_find, header_impl, RECURSE and (DOES>) — and all
+// four come here for it, so there is one place it can be got wrong. \dst may
+// be \len.
 .macro  CFOFF dst, len
         add     \dst, \len, #(ENT_NAME + 7)
         and     \dst, \dst, #-8
+        add     \dst, \dst, #8           // the does-cell
 .endm
 
 // Every code-field routine, in index order.
@@ -77,21 +89,30 @@
         r_fetch, two_to_r, two_r_from, two_r_fetch, pick, roll, \
         minus, star, slash, mod, slash_mod, abs, negate, min, max, \
         one_plus, one_minus, two_star, two_slash, \
-        um_star, um_slash_mod, m_star, sm_slash_rem, fm_slash_mod, \
+        um_star, um_slash_mod, m_star, s_to_d, sm_slash_rem, fm_slash_mod, \
         and, or, xor, invert, lshift, rshift, \
         equals, not_equals, less, greater, u_less, u_greater, \
         zero_equals, zero_not_equals, zero_less, zero_greater, \
-        true, false, fetch, store, c_fetch, c_store, plus_store, \
+        true, false, fetch, store, two_fetch, two_store, \
+        c_fetch, c_store, plus_store, \
         cell_plus, cells, char_plus, chars, align, aligned, \
         move, fill, erase, emit, type, cr, spaces, bl, base, decimal, hex, \
         less_num, num, num_s, hold, sign, num_greater, dot_s, words, \
         source, to_in, refill, accept, key, parse_name, parse, word, \
-        count, find, tick, to_number, q_number, state, abort, quit, bye, \
-        lit, docon, dovar, here, unused, allot, comma, c_comma, \
+        count, find, tick, environment_q, to_number, q_number, \
+        state, abort, quit, bye, \
+        lit, docon, dovar, dodoes, dodefer, domarker, here, unused, pad, allot, comma, c_comma, \
         create, colon, semicolon, immediate, left_bracket, right_bracket, \
-        literal, bracket_char, constant, branch, zero_branch, \
+        literal, bracket_char, constant, postpone, to_body, does, \
+        to, to_run, defer, defer_unset, colon_noname, marker, \
+        s_backslash_quote, \
+        branch, zero_branch, \
+        do_run, loop_run, plus_loop_run, q_do_run, does_run, abort_quote_run, \
         if, else, then, begin, until, while, repeat, again, recurse, \
-        paren, backslash, s_quote_run, s_quote, dot_quote, source_id, \
+        do, loop, i, j, unloop, plus_loop, q_do, leave, \
+        case, of, endof, endcase, \
+        paren, backslash, s_quote_run, s_quote, dot_quote, abort_quote, \
+        source_id, \
         evaluate, r_o, open_file, close_file, read_file, read_line, \
         file_size, file_position, reposition_file, file_status_word, \
         include_file, included
@@ -207,10 +228,12 @@ ent_\label:
 .if (2b - 1b) != \len
 .error "aforth: a name's declared length does not match the name"
 .endif
-        // Pad the name out to the cell the code field starts on.
+        // Pad the name out to a cell, then the does-cell, which is 0 in
+        // every built-in entry: none of them is a DOES> word.
         .set    dict_hlen, ((10 + \len + 7) / 8) * 8
         .space  dict_hlen - (10 + \len)
-        .set    TOK_\label, dict_off + dict_hlen
+        .quad   0                       // does-cell
+        .set    TOK_\label, dict_off + dict_hlen + 8
 cf_\label:
         .quad   \code                   // code field
         .set    dict_off, TOK_\label + 8
@@ -219,9 +242,9 @@ cf_\label:
 .endif
 .endm
 
-// A code-field routine with no name of its own: DOCOL, and DOCON and DOVAR,
-// which CONSTANT and CREATE point an entry at. Not a word, so it gets no
-// entry; only an index and a body.
+// A code-field routine with no name of its own: DOCOL, and DOCON, DOVAR and
+// DODOES, which CONSTANT, CREATE and DOES> point an entry at. Not a word, so
+// it gets no entry; only an index and a body.
 .macro  CODE label
         .text
         .p2align        2
@@ -243,6 +266,17 @@ prim_\label:
 // index. The caller writes the list with TOKEN and ends it with ENDWORD.
 .macro  DEFWORD name, len, label, flags=0
         HEADER  "\name", \len, \label, XT_docol, \flags
+.endm
+
+// A second name for a word written in assembly: an entry whose code field is
+// the other word's index, and no body. It dispatches exactly as the other word
+// does, and costs one header rather than a threaded definition that would call
+// it.
+//
+// \target is the other word's label: DEFALIAS "COMPILE,", 8, compile_comma, comma
+.macro  DEFALIAS name, len, label, target, flags=0
+        HEADER  "\name", \len, \label, XT_\target, \flags
+        .text
 .endm
 
 // One token in a list. The word must already be defined: a token is a backward

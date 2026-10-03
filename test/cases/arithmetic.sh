@@ -39,6 +39,12 @@ prints "UM* makes a double"        '4294967296 4294967296 UM* .S' '<2> 0 1  ok'
 prints "UM* is unsigned"           '-1 -1 UM* .S'    '<2> 1 -2  ok'
 prints "M* keeps the sign"         '-2 3 M* .S'      '<2> -6 -1  ok'
 
+# S>D copies the sign into the high cell, so a negative single stays negative
+# as a double.
+prints "S>D widens a positive number" '5 S>D .S'  '<2> 5 0  ok'
+prints "S>D widens a negative number" '-5 S>D .S' '<2> -5 -1  ok'
+prints "S>D widens zero"              '0 S>D .S'  '<2> 0 0  ok'
+
 prints "UM/MOD divides a short double" '100 0 7 UM/MOD .S' '<2> 2 14  ok'
 prints "UM/MOD divides 2^64 by 3"  '0 1 3 UM/MOD .S' '<2> 1 6148914691236517205  ok'
 prints "UM/MOD by one"             '-1 0 1 UM/MOD .S' '<2> 0 -1  ok'

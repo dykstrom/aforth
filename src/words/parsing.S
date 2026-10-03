@@ -407,6 +407,62 @@ paren_unterminated:
         mov     x1, x28
         b       undefined_word
 
+// ENVIRONMENT? looks the string up in env_table, in src/machine.S, and pushes
+// the answer's cells and true, or false alone for a query it does not know.
+//
+// The string is matched the way dict_find matches a name, folding ASCII
+// letters and nothing else, so max-n asks what MAX-N asks. Each cell of an
+// answer is pushed under its own ROOM: the two cells the query took are gone
+// by then, so only the third push of a two-cell answer can overflow.
+        DEFCODE "ENVIRONMENT?", 12, environment_q       // ( c-addr u -- false | i*x true )
+        NEED    2
+        DPOP    x1                      // u
+        DPOP    x0                      // c-addr
+        adr_sym x2, env_table
+
+// One row: x2 is where it starts, and x5 becomes how far its count cell is.
+1:      ldrb    w3, [x2]                // the name's length
+        cbz     w3, 5f                  // 0 ends the table
+        add     x5, x3, #8
+        and     x5, x5, #-8             // the length byte and the name, padded
+        cmp     x3, x1
+        b.ne    3f
+
+        add     x6, x2, #1              // the row's name
+        mov     x7, x0                  // the query
+        mov     x8, x1
+2:      cbz     x8, 4f
+        ldrb    w9, [x6], #1
+        ldrb    w10, [x7], #1
+        FOLD    w9, w11, w12
+        FOLD    w10, w11, w12
+        cmp     w9, w10
+        b.ne    3f
+        sub     x8, x8, #1
+        b       2b
+
+// Not this row: step over its name, its count and its cells.
+3:      add     x2, x2, x5
+        ldr     x6, [x2], #8            // how many cells
+        add     x2, x2, x6, lsl #3
+        b       1b
+
+// This row: push its cells in order, then true.
+4:      add     x2, x2, x5
+        ldr     x6, [x2], #8
+6:      ROOM    1
+        ldr     x0, [x2], #8
+        DPUSH   x0
+        subs    x6, x6, #1
+        b.ne    6b
+        ROOM    1
+        mov     x0, #-1
+        DPUSH   x0
+        NEXT
+
+5:      DPUSH   xzr
+        NEXT
+
 // >NUMBER converts while the characters convert and stops at the first one
 // that does not, leaving the rest for the caller to look at. The accumulator is
 // a double, so the multiply is a double one: the low half's high bits carry up.
@@ -454,11 +510,3 @@ paren_unterminated:
 1:      DPUSHM                          // the string stays, under a false flag
         mov     TOS, #0
         NEXT
-
-// CHAR is PARSE-NAME and the first byte of what it found. [CHAR], its compiling
-// twin, is in src/words/compile.S with the other words that compile.
-        DEFWORD "CHAR", 4, char         // ( "<spaces>name" -- char )
-        TOKEN   parse_name
-        TOKEN   drop
-        TOKEN   c_fetch
-        ENDWORD

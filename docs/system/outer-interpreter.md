@@ -134,12 +134,16 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 | `ERR_SOURCE_TOO_DEEP` | `aforth: input sources nested too deep` |
 | `ERR_UNTERMINATED_COMMENT` | `aforth: unterminated comment` |
 | `ERR_OPEN_FAILED` | `aforth: cannot open file: ` and the name |
+| `ERR_DEFER_UNSET` | `aforth: deferred word not set` |
+| `ERR_ABORT_QUOTE` | `aforth: ` and the program's message, or `aforth: aborted` when the message is empty |
 
 `ERR_REPORTED`, `ERR_ABORT` and `ERR_QUIT` print nothing and stay the three
 highest numbers: `quit_report` tells a message from a silent exit by comparing
-against the last number that has one. An error added in the middle renumbers
-them, which is allowed — the numbers are runtime only and nothing writes one to
-disk.
+against the last number that has one. That compare names `ERR_ABORT_QUOTE`, so
+a new error with a message must be numbered below it. Numbered above it, the
+error prints nothing at all. An error added in the middle renumbers the ones
+after it, which is allowed — the numbers are runtime only and nothing writes
+one to disk.
 
 `ERR_REPORTED` means the failure has already said what it was. `include_impl`
 raises it after writing the message and the traceback itself, because the file
@@ -158,6 +162,14 @@ the input buffer and the message is written before anything refills it. `'` at
 the end of a line has no name to give and its message stops after `word`.
 `included_impl` calls `err_name` too, with the name of the file it could not
 open.
+
+`ABORT"` and its run-time half `(ABORT")` raise `ERR_ABORT_QUOTE`, and they
+store the program's message with `err_name` too. The message comes from
+outside aforth, but it needs no early reporting. A compiled message lies
+inside the definition, which the unwind leaves alone. An interpreted one
+points into the input buffer, like an undefined word's name. Inside a file,
+`include_impl` reports it as it reports any failure, so the traceback lines
+follow it.
 
 `err_location` writes one line of the traceback under a message, and
 `err_number` writes a line number in decimal. The pictured output words would

@@ -13,6 +13,7 @@ and the region in `src/include/machine.h`.
 | 9 | byte | name length in bytes |
 | 10 | bytes | the name, UTF-8, stored as typed |
 | | pad | to the next cell |
+| N-8 | cell | does-cell: the token list a `DOES>` word runs, as an offset from `DBASE`, or 0 |
 | N | cell | code field: the index of the routine that runs the word |
 | N+8 | cells | parameter field: a colon definition's token list |
 
@@ -28,11 +29,15 @@ name lookup returns when it finds nothing.
 The name is not cell-aligned, and nothing reads it a cell at a time: a
 character is a byte, so comparison is byte by byte.
 
-Three routines work out where the code field starts from the name's length:
-`dict_find`, `header_impl` and `RECURSE`. All three use the `CFOFF` macro in
-`dict.h`, which is the arithmetic the `HEADER` macro does at assembly time.
-Write `CFOFF` rather than the arithmetic, so that a fourth copy cannot drift
-from the other three.
+The does-cell is below the code field, so a body starts one cell after the code
+field in every entry, and only `DODOES` and `(DOES>)` read or write it. It is 0
+in every built-in entry. See [compiling.md](compiling.md).
+
+Four routines work out where the code field starts from the name's length:
+`dict_find`, `header_impl`, `RECURSE` and `(DOES>)`. All four use the `CFOFF`
+macro in `dict.h`, which is the arithmetic the `HEADER` macro does at assembly
+time. Write `CFOFF` rather than the arithmetic, so that a fifth copy cannot
+drift from the other four.
 
 ## Dispatch
 
@@ -50,14 +55,18 @@ stack instead of the list.
 `DOCOL` is the code field of every colon definition: it pushes `IP` on the
 return stack and points `IP` at the parameter field. `EXIT` pops it back.
 Neither is reached by name; `DOCOL` has no entry at all, because it is not a
-word. `DOCON` and `DOVAR` are the other two code fields, for a word made by
-`CONSTANT` and one made by `CREATE`, and they have no entry either. See
+word. `DOCON`, `DOVAR`, `DODOES`, `DODEFER` and `DOMARKER` are the other five
+code fields, for a word made by `CONSTANT` or `VALUE`, one made by `CREATE`, one
+that `DOES>` has given a does-part, one made by `DEFER`, and one made by
+`MARKER`, and they have no entry either. See
 [compiling.md](compiling.md).
 
 `F_IMMEDIATE` and `F_HIDDEN` are both read by then. The outer interpreter runs
 an immediate word rather than compiling it, and `dict_find` walks past a hidden
-one — which is what `(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)` and `(S")` are,
-and what a definition is between `:` and `;`.
+one — which is what `(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)`, `(DO)`,
+`(LOOP)`, `(+LOOP)`, `(?DO)`, `(S")`, `(ABORT")`, `(DOES>)`, `(TO)` and
+`(DEFER)` are, what a definition is between `:` and `;`, and what one made by
+`:NONAME` stays.
 
 ## Adding a word
 
@@ -79,7 +88,16 @@ notation Forth-2012 uses for it:
 ```
 
 `CODE` is `DEFCODE` without the entry, for a code-field routine that is not a
-word: `DOCOL`, `DOCON` and `DOVAR` are defined with it.
+word: `DOCOL`, `DOCON`, `DOVAR`, `DODOES`, `DODEFER` and `DOMARKER` are defined
+with it.
+
+`DEFALIAS` gives a word written in assembly a second name. The entry takes the
+other word's code field and has no body, so the alias costs one header and
+runs exactly as the other word does. `COMPILE,`, `VALUE` and `IS` are the three:
+
+```
+        DEFALIAS "COMPILE,", 8, compile_comma, comma    // ( xt -- )
+```
 
 ### Names that need escaping
 
@@ -93,16 +111,41 @@ string.
 | `,` | `","` | `2c` |
 | `."` | `".\""` | `2e 22` |
 | `S"` | `"S\""` | `53 22` |
+| `S\"` | `"S\\\""` | `53 5c 22` |
 | `\` | `"\\"` | `5c` |
 
 The declared length is the length of the name, not of the string that spells
-it, so `."` is 2 and `\` is 1. A wrong count is a build error rather than a
-corrupt entry, so this is a thing to get wrong once.
+it, so `."` is 2, `\` is 1 and `S\"` is 3. A wrong count is a build error
+rather than a corrupt entry, so this is a thing to get wrong once.
 
 The coverage check in `test/run-tests.sh` reads these names out of the sources
 and undoes both escapes, so a name holding a quote reaches it whole. See
 [testing.md](testing.md), which also has the one name that check cannot really
 see.
+
+### The symbols a label makes
+
+The label is not only a name for the reader. The defining macros build symbols
+out of it, and a routine that picks one of those names fails the build:
+
+| Symbol | What it is | Made by |
+|--------|-----------|---------|
+| `ent_<label>` | the entry | `HEADER` |
+| `cf_<label>` | the code field | `HEADER` |
+| `TOK_<label>` | the token, an offset from `DBASE` | `HEADER` |
+| `XT_<label>` | the code field's index | `AFORTH_PRIM_LIST` |
+| `prim_<label>` | the routine's first instruction | `CODE` |
+
+So a helper routine may not be called `cf_<label>` for a word that exists.
+`cf_check`, `cf_forward`, `cf_backward` and `cf_resolve` are safe because
+aforth has no words named `CHECK`, `FORWARD`, `BACKWARD` or `RESOLVE`. The
+routine `ELSE` and `ENDOF` share is `else_impl` and not `cf_else`, because
+`cf_else` is `ELSE`'s own code field. `header_impl`, `include_impl` and
+`number_impl` are named the same way.
+
+The build reports this as `symbol 'cf_else' is already defined` against a line
+in `<instantiation>`, which is inside the macro's expansion. It does not name
+the routine that took the name.
 
 Five rules govern them.
 
@@ -126,34 +169,41 @@ Five rules govern them.
 
 The entries are in `src/words/`, one file per kind of word, and
 `src/interpreter.S` pulls them in with `#include` between `DICT_BEGIN` and
-`DICT_END`. Put a new word in the file its kind names.
+`DICT_END`. Put a new word in the file its kind names. A word written in Forth
+goes in `lib/aforth.f` instead, and the table does not list those; see
+[startup.md](startup.md) for which words qualify.
 
 | File | Words |
 |------|-------|
 | `stack.S` | the stack shuffles, the return stack transfers, `PICK` and `ROLL` |
 | `arithmetic.S` | the arithmetic, the mixed precision, the logic, the comparisons, and `udiv128` |
-| `memory.S` | `@ ! C@ C!` and the rest that address memory, and `HERE UNUSED ALLOT , C, ALIGN` with the two routines that move the allocation pointer |
+| `memory.S` | `@ ! C@ C!` and the rest that address memory, and `HERE UNUSED PAD ALLOT , C, ALIGN` with the two routines that move the allocation pointer |
 | `output.S` | everything that prints, and the pictured output routines |
 | `input.S` | `SOURCE >IN SOURCE-ID REFILL ACCEPT KEY EVALUATE`, and the input source stack |
-| `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl` |
-| `file.S` | `R/O OPEN-FILE CLOSE-FILE READ-FILE READ-LINE FILE-SIZE FILE-POSITION REPOSITION-FILE FILE-STATUS`, and `INCLUDE-FILE INCLUDED INCLUDE` with `include_impl` under them |
-| `compile.S` | `CREATE : ; IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VARIABLE`, the string literals `S"` and `."`, and `header_impl` |
-| `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE`, and the routines that write a branch distance |
+| `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl`, and `ENVIRONMENT?` |
+| `file.S` | `R/O OPEN-FILE CLOSE-FILE READ-FILE READ-LINE FILE-SIZE FILE-POSITION REPOSITION-FILE FILE-STATUS`, and `INCLUDE-FILE INCLUDED` with `include_impl` under them |
+| `compile.S` | `CREATE : ; :NONAME IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VALUE TO DEFER IS MARKER COMPILE, POSTPONE >BODY DOES>`, the string literals `S"`, `S\"` and `."`, `ABORT"`, and `header_impl` |
+| `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE DO ?DO LOOP +LOOP I J UNLOOP LEAVE CASE OF ENDOF ENDCASE`, and the routines that write a branch distance |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
 The table is in include order, and include order is definition order: a word
-may only compile a token from a file above its own. That is why `parsing.S`
-comes before `file.S` — `INCLUDE` is `PARSE-NAME` and `INCLUDED`. The fragments
-cannot be assembled on their own; the Makefile's glob is `src/*.S` and does not
+may only compile a token from a file above its own. That is why `output.S`
+comes after `stack.S` and `arithmetic.S` — `.` compiles `DUP` and `ABS`. The
+fragments cannot be assembled on their own; the Makefile's glob is `src/*.S` and does not
 reach into `src/words/`.
 
-`DOCOL`, `DOCON`, `DOVAR`, `EXIT`, `EXECUTE`, `(STOP)`, `(LIT)`, `(BRANCH)`,
-`(0BRANCH)` and `(S")` stay in `src/interpreter.S`. They are the inner
-interpreter rather than words a program reaches for. The last four are hidden
-for the same reason: each reads something out of the list it is running, so a
-programmer who typed one would push, jump or print by whatever came next.
+`DOCOL`, `DOCON`, `DOVAR`, `DODOES`, `DODEFER`, `DOMARKER`, `EXIT`, `EXECUTE`,
+`(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)`, `(DO)`, `(LOOP)`, `(+LOOP)`,
+`(?DO)`, `(S")`, `(ABORT")`, `(DOES>)`, `(TO)` and `(DEFER)` stay in
+`src/interpreter.S`. They are the inner interpreter rather than words a program
+reaches for. The twelve after `(STOP)` are hidden for the same reason: each is
+the run-time half of a word the programmer writes, so a programmer who typed
+one would push, jump, print, store, strand a pair of cells or rewrite the
+newest word by whatever came next.
 `(S")` reads a count and then that many bytes rather than one cell; the shape
-is in [compiling.md](compiling.md).
+is in [compiling.md](compiling.md). `(DO)` reads nothing out of the list, but
+leaves a frame on the return stack that only `(LOOP)`, `(+LOOP)`, `UNLOOP` or
+`LEAVE` takes off again; see [control-flow.md](control-flow.md).
 
 Nothing else may go into `SECTION_RODATA` between `DICT_BEGIN` and `DICT_END`,
 and that now means inside any of the files in `src/words/`. The image is

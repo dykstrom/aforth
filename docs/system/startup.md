@@ -171,9 +171,17 @@ that number to `quit_report`. See the "Leaving the machine" rules in
 ### The system file
 
 `lib/aforth.f` in the source tree, copied to `build/aforth.f` by `make`. It
-holds the part of aforth written in Forth rather than in ARM64 assembly, which
-today is `WITHIN`. A word belongs there when Forth says it more clearly than
-assembly would and nothing on the dispatch path calls it.
+holds the part of aforth written in Forth rather than in ARM64 assembly:
+`WITHIN`, `*/MOD`, `*/`, `.R`, `U.R`, `.(`, `CHAR`, `INCLUDE`, `VARIABLE`,
+`BUFFER:`, `[']`, `DEFER@`, `DEFER!` and `ACTION-OF`.
+A word belongs there when Forth says it more clearly than assembly would,
+nothing on the dispatch path calls it, and no word written in assembly
+compiles it.
+
+`.`, `U.` and `SPACE` pass that rule and stay in assembly all the same. A
+binary with no `aforth.f` beside it reports the missing file and still brings
+up the prompt, and `.` is what lets that prompt print a number.
+`test/cases/startup.sh` checks `1 .` in exactly that case.
 
 It is found beside the binary, not in the working directory: `system_file_path`
 in `src/machine.S` asks the platform for the running executable's own path, cuts

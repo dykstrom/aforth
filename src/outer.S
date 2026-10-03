@@ -74,6 +74,15 @@ msg_unterminated_comment:
         .asciz  "aforth: unterminated comment"
 msg_open_failed:
         .asciz  "aforth: cannot open file"
+msg_defer_unset:
+        .asciz  "aforth: deferred word not set"
+
+// ABORT" supplies its own message, which follows the prefix. An empty one
+// would leave the line ending in the prefix, so it says aborted instead.
+msg_prefix:
+        .asciz  "aforth: "
+msg_aborted:
+        .asciz  "aforth: aborted"
 
 // The lines under a message that say which file an error happened in, and
 // which file included that one. include_impl writes them as it unwinds. A file
@@ -216,6 +225,8 @@ quit_restart:
         ldr     x0, [UP, #UV_R0]
         mov     RSP, x0
         str     xzr, [UP, #UV_STATE]
+        mov     x0, #-1
+        str     x0, [UP, #UV_LEAVE]     // and no loop is being compiled either
         bl      src_reset
 
 quit_line:
@@ -281,7 +292,7 @@ quit_report:
         stp     x29, x30, [sp, #-16]!
         mov     x29, sp
 
-        cmp     x0, #ERR_OPEN_FAILED
+        cmp     x0, #ERR_ABORT_QUOTE
         b.hi    qr_done
 
         cmp     x0, #ERR_DS_OVERFLOW
@@ -312,6 +323,10 @@ quit_report:
         b.eq    qr_unterminated_comment
         cmp     x0, #ERR_OPEN_FAILED
         b.eq    qr_open_failed
+        cmp     x0, #ERR_DEFER_UNSET
+        b.eq    qr_defer_unset
+        cmp     x0, #ERR_ABORT_QUOTE
+        b.eq    qr_abort_quote
         adr_sym x0, msg_ds_underflow
         b       qr_write
 qr_ds_overflow:
@@ -350,6 +365,9 @@ qr_source_too_deep:
 qr_unterminated_comment:
         adr_sym x0, msg_unterminated_comment
         b       qr_write
+qr_defer_unset:
+        adr_sym x0, msg_defer_unset
+        b       qr_write
 
 // The two errors that name something. The name is in the user area, put there
 // by err_name, and it points into the input buffer, which nothing has refilled
@@ -371,6 +389,21 @@ qr_named:
         ldr     x1, [UP, #UV_ERR_LEN]
         bl      err_write
         b       qr_newline
+
+// ABORT" with a true flag. The message is in the user area, put there by
+// err_name. A compiled message lies inside the definition and an interpreted
+// one in the input buffer, and neither has changed by the time this runs.
+qr_abort_quote:
+        ldr     x1, [UP, #UV_ERR_LEN]
+        cbz     x1, 1f
+        adr_sym x0, msg_prefix
+        bl      write_stderr
+        ldr     x0, [UP, #UV_ERR_ADDR]
+        ldr     x1, [UP, #UV_ERR_LEN]
+        bl      err_write
+        b       qr_newline
+1:      adr_sym x0, msg_aborted
+        // fall through
 
 qr_write:
         bl      write_stderr
