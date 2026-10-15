@@ -152,7 +152,7 @@ having written nothing — which a run of `dict_comma` calls could not do. The
 pad is zeroed, as `header_impl` zeroes a name's pad, so that the same source
 builds the same bytes.
 
-`S"`, `."` and `ABORT"` are immediate, and all three parse with a double
+`S"`, `C"`, `."` and `ABORT"` are immediate, and all four parse with a double
 quote as the delimiter from where `>IN` stands, through `parse_impl`; see
 [parsing.md](parsing.md).
 `parse_name_impl` has already stepped past the one space that ended the word's
@@ -171,6 +171,34 @@ when the flag is true. See [outer-interpreter.md](outer-interpreter.md).
 While interpreting, `ABORT"` pops the flag at once and leaves the message in
 the input buffer, where it was parsed. Forth-2012 leaves that undefined, so the
 interpreted behaviour is aforth's own.
+
+### Counted strings
+
+`C"` compiles a counted string. That is one count byte with the bytes straight
+after it, the form `FIND` and `WORD` use. `(S")`'s layout cannot hold one,
+because its count is a whole cell, with seven zero bytes between the count and
+the bytes. So `C"` compiles `(C")`'s token, the count in one byte, the bytes,
+and zeroes up to the next cell:
+
+```
+  TOK_(C")  | 5 h e l l o . . |  the next token
+  <- cell ->  <-- one cell -->
+```
+
+`(C")` pushes the address of the count byte and steps `IP` over
+`(count + 8) & -8` bytes. The padding keeps the next token on a cell boundary,
+as it does for `(S")`. `dict_compile_counted` writes all of it. It tests the
+room once, as `dict_compile_string` does, and the two share the loop that
+copies the bytes and zeroes the pad.
+
+One byte counts to 255. A longer string raises `ERR_STRING_TOO_LONG`, which
+prints `aforth: counted string too long`, before anything is written.
+Forth-2012 makes that an ambiguous condition.
+
+While interpreting, `C"` copies the count and the bytes into the next transient
+buffer, as `S"` copies its string. Forth-2012 leaves that undefined, so the
+interpreted behaviour is aforth's own. A buffer is never smaller than the input
+buffer, so 256 bytes always fit.
 
 ### The transient buffers
 

@@ -172,7 +172,7 @@ that number to `quit_report`. See the "Leaving the machine" rules in
 
 `lib/aforth.f` in the source tree, copied to `build/aforth.f` by `make`. It
 holds the part of aforth written in Forth rather than in ARM64 assembly:
-`WITHIN`, `*/MOD`, `*/`, `.R`, `U.R`, `.(`, `CHAR`, `INCLUDE`, `VARIABLE`,
+`WITHIN`, `*/MOD`, `*/`, `.R`, `U.R`, `HOLDS`, `.(`, `CHAR`, `INCLUDE`, `VARIABLE`,
 `BUFFER:`, `[']`, `DEFER@`, `DEFER!` and `ACTION-OF`.
 A word belongs there when Forth says it more clearly than assembly would,
 nothing on the dispatch path calls it, and no word written in assembly

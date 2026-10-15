@@ -234,6 +234,47 @@ raises 'compiling a string reports a full dictionary' 'UNUSED 32 - ALLOT
 : Z
 S" x"' 'aforth: dictionary full'
 
+# C" is S" for a counted string: one count byte with the bytes after it, pushed
+# as one address. The three are the suite's own: a string, the empty string,
+# and a closing quote with the next word straight after it.
+prints 'C" compiles a counted string' ': CQ1 C" 123" ; CQ1 COUNT TYPE' '123 ok'
+prints 'C" compiles the empty string' ': CQ2 C" " ; CQ2 C@ .' '0  ok'
+prints 'C" ends at the quote' ': CQ3 C" 2345"COUNT TYPE ; CQ3' '2345 ok'
+
+# FIND takes a counted string, so a count byte in the wrong place finds nothing.
+prints 'C" gives FIND a name to find' ': CD C" DUP" ; CD FIND NIP .' '-1  ok'
+
+# The count byte and the bytes are padded to a cell together, so 7 bytes fill
+# one cell and the next byte starts a second. Each string comes back whole and
+# the 42 after them still runs.
+prints 'a definition steps over counted strings' \
+  ': CP C" 123456" C" 1234567" C" 12345678" 42 ;
+CP . COUNT TYPE SPACE COUNT TYPE SPACE COUNT TYPE' ' ok
+42 12345678 1234567 123456 ok'
+
+# One byte counts to 255. A longer string raises before anything is written, so
+# HERE is where the definition had left it.
+L255=$(printf '%255s' '' | tr ' ' x)
+prints 'C" takes 255 bytes' ": CL C\" $L255\" ; CL C@ ." '255  ok'
+raises 'C" refuses 256 bytes' ": CL C\" ${L255}x\" ;" \
+  'aforth: counted string too long'
+prints 'C" writes nothing when it refuses' \
+  "VARIABLE H : CL [ HERE H ! ] C\" ${L255}x\" ;
+HERE H @ - ." '0  ok'
+
+# The room for the whole string is tested first, as it is for S".
+raises 'compiling a counted string reports a full dictionary' \
+  'UNUSED 32 - ALLOT
+: Z
+C" x"' 'aforth: dictionary full'
+
+# While interpreting, C" copies into the transient buffers as S" does, so two
+# in a row are both live.
+prints 'C" leaves a counted string while interpreting' \
+  'C" abc" C" defg" COUNT TYPE COUNT TYPE' 'defgabc ok'
+raises 'C" refuses 256 bytes while interpreting' "C\" ${L255}x\"" \
+  'aforth: counted string too long'
+
 # ABORT" lays its message down the way S" does and compiles (ABORT") after it.
 # A false flag lets the definition run on; a true one stops everything with the
 # program's own message, in the same shape as aforth's.

@@ -21,7 +21,7 @@ the most accurate picture of how things actually work.
 | [`control-flow.md`](control-flow.md) | how a definition branches |
 | [`files.md`](files.md) | how a file is opened, read and included, and what an ior carries |
 | [`startup.md`](startup.md) | what `main` does in order, what the three command-line flags decide, and which of the two init files cold start may miss in silence |
-| [`testing.md`](testing.md) | how to write a case, and the ways a case passes while testing nothing |
+| [`testing.md`](testing.md) | how to write a case, the ways a case passes while testing nothing, and the Forth-2012 test suite |
 | [`benchmark.md`](benchmark.md) | what a word costs, and how to measure it again |
 | [`assembler.md`](assembler.md) | the toolchain's own traps |
 | [`ci.md`](ci.md) | the two workflows, and why the Linux runner is pinned |

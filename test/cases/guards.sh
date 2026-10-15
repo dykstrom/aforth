@@ -112,12 +112,14 @@ guards "SPACES"  'SPACES'  0
 guards "#"       '#'       1
 guards "#S"      '#S'      1
 guards "HOLD"    'HOLD'    0
+guards "HOLDS"   'HOLDS'   1
 guards "SIGN"    'SIGN'    0
 guards "#>"      '#>'      1
 
 guards "ACCEPT"  'ACCEPT'  1
 
 guards "PARSE"   'PARSE'   0
+guards "RESTORE-INPUT" 'RESTORE-INPUT' 0
 guards "WORD"    'WORD'    0
 guards "COUNT"   'COUNT'   0
 guards "FIND"    'FIND'    0
@@ -333,7 +335,14 @@ room "DODOES"     ': D CREATE DOES> ; D X DUP X'
 room 'S"'         'S" x"'
 room 'S\"'        'S\" x"'
 room '(S")'       ': P S" x" ; P'
+
+# C" pushes one, so it takes the last cell with a DUP as the lines above do.
+room 'C"'         'DUP C" x"'
+room '(C")'       ': P C" x" ; DUP P'
 room "SOURCE-ID"  'DUP SOURCE-ID'
+
+# SAVE-INPUT pushes seven, so one free cell is already too few.
+room "SAVE-INPUT" 'SAVE-INPUT'
 room "R/O"        'DUP R/O'
 
 # Each takes a fileid and leaves three cells, so one free cell is already too

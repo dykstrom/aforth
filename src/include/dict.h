@@ -111,8 +111,9 @@
         if, else, then, begin, until, while, repeat, again, recurse, \
         do, loop, i, j, unloop, plus_loop, q_do, leave, \
         case, of, endof, endcase, \
-        paren, backslash, s_quote_run, s_quote, dot_quote, abort_quote, \
-        source_id, \
+        paren, backslash, s_quote_run, s_quote, c_quote_run, c_quote, \
+        dot_quote, abort_quote, \
+        source_id, save_input, restore_input, \
         evaluate, r_o, open_file, close_file, read_file, read_line, \
         file_size, file_position, reposition_file, file_status_word, \
         include_file, included

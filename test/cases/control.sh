@@ -145,6 +145,39 @@ prints "+LOOP counts down on a negative step" ': T 0 10 DO I . -1 +LOOP ;
 T' ' ok
 10 9 8 7 6 5 4 3 2 1 0  ok'
 
+# The boundary +LOOP stops at is between limit - 1 and limit, and nowhere else.
+# Each case below counts the turns of a loop whose step is large enough to carry
+# index - limit across MAX-INT, which a test comparing the sign of index - limit
+# before and after the step mistakes for the end: it counts 128 for each of the
+# first four and 1 for each of the last two.
+TURNS='-1 1 RSHIFT CONSTANT MAX-INT  MAX-INT INVERT CONSTANT MIN-INT  VARIABLE STEP : TURNS ( limit start step -- n ) STEP ! 0 ROT ROT DO 1+ STEP @ +LOOP ;'
+
+prints "+LOOP runs the unsigned range in 256 large steps up" "$TURNS
+-1 0 -1 8 RSHIFT 1+ TURNS ." ' ok
+256  ok'
+
+prints "+LOOP runs the unsigned range in 256 large steps down" "$TURNS
+0 -1 -1 8 RSHIFT 1+ NEGATE TURNS ." ' ok
+256  ok'
+
+prints "+LOOP runs the signed range in 256 large steps up" "$TURNS
+MAX-INT MIN-INT MAX-INT 7 RSHIFT 1+ TURNS ." ' ok
+256  ok'
+
+prints "+LOOP runs the signed range in 256 large steps down" "$TURNS
+MIN-INT MAX-INT MAX-INT 7 RSHIFT 1+ NEGATE TURNS ." ' ok
+256  ok'
+
+# A step of MAX-INT from -MAX-INT lands on 0 and then on MAX-INT, the limit.
+prints "+LOOP steps by MAX-INT across the signed range" "$TURNS
+MAX-INT MAX-INT NEGATE MAX-INT TURNS ." ' ok
+2  ok'
+
+# A step of MIN-INT from 1 lands on MIN-INT + 1, the limit, on the second turn.
+prints "+LOOP steps by MIN-INT onto its limit" "$TURNS
+MIN-INT 1+ 1 MIN-INT TURNS ." ' ok
+2  ok'
+
 prints "?DO runs the loop when the range is not empty" ': T 3 0 ?DO I . LOOP ;
 T' ' ok
 0 1 2  ok'

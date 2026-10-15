@@ -131,6 +131,34 @@ prints "?NUMBER converts a signed number" 'PARSE-NAME -42 ?NUMBER .S' \
 prints "?NUMBER leaves a name it cannot convert" \
   'PARSE-NAME wat OVER >R ?NUMBER . . R> - .' '0 3 0  ok'
 
+# The number prefixes: # is decimal, $ hex and % binary, for that one number,
+# and 'c' is the byte between the quotes. The same eight in HEX read the same,
+# which a conversion still reading BASE for its digits would not.
+prints "a prefix names a radix and quotes a character" \
+  "#1289 #-1289 \$12eF \$-12eF %10010110 %-10010110 'z' 'Z' .S" \
+  '<8> 1289 -1289 4847 -4847 150 -150 122 90  ok'
+prints "a prefix reads the same in any BASE" \
+  "HEX #1289 #-1289 \$12eF \$-12eF %10010110 %-10010110 'z' 'Z' DECIMAL .S" \
+  '<8> 1289 -1289 4847 -4847 150 -150 122 90  ok'
+prints "a prefix leaves BASE as it was" \
+  'HEX $10 #10 %10 BASE @ DECIMAL . . . .' '16 2 10 16  ok'
+prints "a number with a prefix compiles as a literal" \
+  ": NMP #8327 \$-2cbe %011010111 ''' ;
+NMP .S" ' ok
+<4> 8327 -11454 215 39  ok'
+prints "?NUMBER reads a prefix" 'PARSE-NAME $FF ?NUMBER .S' '<2> 255 -1  ok'
+prints ">NUMBER takes no prefix" \
+  '0 0 PARSE-NAME $FF OVER >R >NUMBER SWAP R> - . . . .' '0 3 0 0  ok'
+
+# A prefix or a minus with no digits after it, a minus before the prefix, a
+# digit the radix does not have, and quotes round anything but one byte.
+raises "a prefix on its own is not a number" '$'    'aforth: undefined word: $'
+raises "a prefix and a minus are not a number" '%-' 'aforth: undefined word: %-'
+raises "a minus goes after the prefix"       '-#12' 'aforth: undefined word: -#12'
+raises "a prefix takes only its own digits"  '%2'   'aforth: undefined word: %2'
+raises "quotes round two bytes are no number" "'ab'" "aforth: undefined word: 'ab'"
+raises "quotes round nothing are no number"   "''"   "aforth: undefined word: ''"
+
 prints "CHAR takes the first byte of a name" 'CHAR A .'    '65  ok'
 prints "CHAR takes only the first"           'CHAR abc .'  '97  ok'
 

@@ -22,6 +22,8 @@ not print, and an `exits` case sees 142.
 `test/run-tests.sh` holds the helpers, the order the case files run in, and the
 coverage check. It sources one file per kind of word from `test/cases/`, and
 those names mirror `src/words/`, so a new word's case has one obvious home.
+`forth2012.sh` is the one file that is not about a kind of word. It runs the
+Forth-2012 test suite.
 
 | File | What it covers |
 |------|----------------|
@@ -37,6 +39,7 @@ those names mirror `src/words/`, so a new word's case has one obvious home.
 | `outer.sh` | the `QUIT` loop, its error messages, `ABORT`, `QUIT`, `BYE` |
 | `startup.sh` | the command line, and the two files cold start reads |
 | `system.sh` | that cold start loads `lib/aforth.f` at all, and `WITHIN` |
+| `forth2012.sh` | the Core and Core Extension files of the Forth-2012 test suite, in one run. See below |
 | `guards.sh` | the depth and room guard of every word that reads or fills a stack |
 
 ## Writing a case
@@ -108,13 +111,15 @@ libedit, so such a case puts its input in a fixture file and includes it, as
 the UTF-8 case for `ABORT"` in `test/cases/file.sh` does.
 
 A case runs the binary itself when no helper can give it what it needs. Every
-such case is in `test/cases/outer.sh` or `test/cases/startup.sh`.
+such case is in `test/cases/outer.sh`, `test/cases/startup.sh` or
+`test/cases/forth2012.sh`.
 
 | What the case needs | Where |
 |---------------------|-------|
 | the banner line, which every helper drops | the banner case in `outer.sh` |
 | output that begins with the banner, so line 1 must survive | the `--help` cases in `startup.sh` |
 | an empty argument, which the helpers split away | `--init ''` in `startup.sh` |
+| a working directory of its own, and three checks on one run | `forth2012.sh` |
 
 Such a case must still name a command line. Outside `test/cases/startup.sh` it
 passes `DEFAULT_ARGS` by hand. Otherwise it reads whatever `init.f` the
@@ -270,6 +275,82 @@ that way before it was believed, and the suite passed both before and after.
 
 Nothing in the repository holds that driver. It is twenty lines, written when a
 routine needs it and thrown away afterwards.
+
+## The Forth-2012 test suite
+
+`test/cases/forth2012.sh` runs the Core and Core Extension files of the
+Forth-2012 test suite, the suite that other Forth systems are checked with.
+The files are in `test/forth2012/`, copied byte for byte from one upstream
+commit and never edited (ADR 0015). The README there names the commit, and
+each file's author and terms.
+
+aforth's own side is three files in `test/cases/`:
+
+| File | What it is |
+|------|------------|
+| `forth2012.f` | The driver. It includes `prelimtest.fth`, `tester.fr`, `core.fr`, `coreplustest.fth`, `utilities.fth`, `errorreport.fth` and `coreexttest.fth` in that order, then runs `REPORT-ERRORS`. |
+| `forth2012.sh` | The case. It runs the driver once and checks the result three ways. |
+| `forth2012.out` | The whole of stdout from a run that passed, the banner line dropped. |
+
+aforth resolves a relative name against the working directory, so the case
+runs the binary from `test/forth2012/`. The driver then names each file
+without a path. The case types a second line on stdin, which `core.fr`'s
+`ACCEPT` test reads and prints back.
+
+### Reading a failure
+
+Each check prints what it found beneath its `FAIL` line.
+
+| Check | What a failure shows |
+|-------|----------------------|
+| the suite writes nothing to stderr | aforth's error message, with the file and line. An undefined word stops the file it is in, so this is usually the first thing to read. |
+| the suite counts no error | the two counts, and every `Error #`, `INCORRECT RESULT:` and `WRONG NUMBER OF RESULTS:` line. Each of those lines is the source line of the test that failed. |
+| the suite prints what `forth2012.out` holds | a `diff -u` of the expected file against this run. A line beginning `YOU SHOULD SEE` is checked only here. |
+
+A word that computes a wrong result fails the second and third checks. A word
+that is missing fails all three: it stops the file it is in, so the error
+report is never printed and the second check finds no count. A change only to
+what is printed, such as the `ok` prompt, fails only the third.
+
+To see which test hung, or to watch every test go by, set `VERBOSE` in a copy
+of `tester.fr` outside the repository. Never in the copy here.
+
+### Regenerating `forth2012.out`
+
+Regenerate the file only after a change that is meant to alter what the suite
+prints. Run this from the repository root, after `make`:
+
+```
+(cd test/forth2012 && printf '%s\n' 'S" ../cases/forth2012.f" INCLUDED' \
+  'typed for ACCEPT' | ../../build/aforth --no-init | sed 1d \
+  > ../cases/forth2012.out)
+```
+
+The second line must be the one `forth2012.sh` types. Read `git diff` on the
+file before committing it, and check that the error report still says
+`Total 0`. The suite does check that, but a reader is the only check on the
+`YOU SHOULD SEE` lines.
+
+The file has trailing spaces on purpose: `0 1 2 3 4 5 6 7 8 9 ` is what `.`
+prints. An editor set to strip trailing white space breaks the case.
+
+`.gitignore` ignores `*.out` and names this file as the one exception. A
+second expected file needs an exception of its own, or git never sees it.
+
+### Updating from upstream
+
+1. Clone `https://github.com/gerryjackson/forth2012-test-suite` and check out
+   the new commit.
+2. Copy the seven files from its `src/` into `test/forth2012/`, and nothing
+   else.
+3. Run `cmp` on each file against the clone. Every one must be identical.
+4. Run `make test`. If the error count is not zero, fix aforth, not the copy.
+5. Regenerate `forth2012.out` as above, and read the diff.
+6. Update the commit and the terms in `test/forth2012/README.md`. A file's
+   notice can change between commits.
+
+A new file from the suite goes into the driver in the order that upstream's
+`runtests.fth` gives, and its terms go into the README.
 
 ## Linux
 

@@ -57,6 +57,11 @@ the pointer, and `#>` reports the address and the length of what has
 accumulated. The address is the pointer itself, so a string must be typed
 before the next `<#` moves it.
 
+`HOLDS` adds a whole string. It is a loop over `HOLD` in `lib/aforth.f` that
+holds the last byte first, so the string reads forwards in the result. Every
+byte goes through `HOLD`, so a string longer than the room left raises the
+overflow below.
+
 `#` divides the double it is given by `BASE` in two steps, because the quotient
 of a double is a double: the high half divides on its own, and its remainder
 rides above the low half into `udiv128`. Dividing the low half alone would

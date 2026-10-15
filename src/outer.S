@@ -76,6 +76,8 @@ msg_open_failed:
         .asciz  "aforth: cannot open file"
 msg_defer_unset:
         .asciz  "aforth: deferred word not set"
+msg_string_too_long:
+        .asciz  "aforth: counted string too long"
 
 // ABORT" supplies its own message, which follows the prefix. An empty one
 // would leave the line ending in the prefix, so it says aborted instead.
@@ -325,6 +327,8 @@ quit_report:
         b.eq    qr_open_failed
         cmp     x0, #ERR_DEFER_UNSET
         b.eq    qr_defer_unset
+        cmp     x0, #ERR_STRING_TOO_LONG
+        b.eq    qr_string_too_long
         cmp     x0, #ERR_ABORT_QUOTE
         b.eq    qr_abort_quote
         adr_sym x0, msg_ds_underflow
@@ -367,6 +371,9 @@ qr_unterminated_comment:
         b       qr_write
 qr_defer_unset:
         adr_sym x0, msg_defer_unset
+        b       qr_write
+qr_string_too_long:
+        adr_sym x0, msg_string_too_long
         b       qr_write
 
 // The two errors that name something. The name is in the user area, put there

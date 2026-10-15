@@ -117,11 +117,21 @@ needs no `UNLOOP` after it.
 `+LOOP` takes a signed step off the data stack instead of adding one. It cannot
 test for equality, because a step over one steps past the limit without ever
 meeting it. Forth-2012 puts the end of the loop at the boundary between
-`limit - 1` and `limit` and asks whether the step carried the index over it,
-and `(+LOOP)` asks the same question the other way round: it subtracts the
-limit from the index before and after the step and ends the loop when those two
-differ in sign. A negative step therefore counts down to the limit and stops on
-it, where `LOOP` would run past.
+`limit - 1` and `limit` and asks whether the step carried the index over it.
+`(+LOOP)` adds `MIN-INT` to `index - limit`, which moves that boundary onto the
+one between `MAX-INT` and `MIN-INT`. Adding the step then crosses it exactly
+when the signed add overflows, so the test is the processor's overflow flag. A
+negative step therefore counts down to the limit and stops on it, where `LOOP`
+would run past.
+
+The `MIN-INT` is added on every turn, by flipping the top bit, and is not kept
+in the frame. That is the biased index of the paragraph above, paid for in one
+instruction of `(+LOOP)` instead of in every `I`.
+
+Comparing the sign of `index - limit` before and after the step is not the
+same test. That value also changes sign when it crosses `MAX-INT`, so a step
+of 2^56 from 0 to -1 stops after 128 turns instead of 256. The cases in
+`test/cases/control.sh` that count 256 turns are there to catch that.
 
 `?DO` is the loop that runs no times over an empty range. `(?DO)` compares the
 limit with the starting index, and pushes nothing and jumps past the whole loop

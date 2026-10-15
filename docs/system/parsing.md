@@ -138,8 +138,8 @@ It answers thirteen queries: `/COUNTED-STRING`, `/HOLD`, `/PAD`,
 
 ## Numbers
 
-`digit_value` is the one place that knows the digit set and reads `BASE`, the
-way `#` is for output. `0` to `9` are themselves and a letter is 10 upward,
+`digit_value` is the one place that knows the digit set, the way `#` is for
+output. `0` to `9` are themselves and a letter is 10 upward,
 folded, so `ff` and `FF` are one number. The characters between `9` and `A` in
 ASCII are rejected rather than read as digits above nine, which matters most in
 base 16, where `:` would otherwise convert as 3.
@@ -153,8 +153,19 @@ carry up, and the digit's addition carries too.
 `?NUMBER ( c-addr u -- n true | c-addr u false )` is not a Forth-2012 word. The
 name is the one FIG and F83 used, and it is the conversion the interpreter
 wants: a leading minus is allowed, the whole string must convert, and the flag
-says which way it went. The number prefixes Forth-2012 allows a text
-interpreter — `#`, `$`, `%` and `'c'` — are not implemented.
+says which way it went.
+
+It also reads the forms Forth-2012 allows a text interpreter beyond plain
+digits. `#`, `$` and `%` in front of a number make it decimal, hex or binary,
+for that number only, and `BASE` is left as it was. A minus goes after the
+prefix, so `$-12eF` is a number and `-$12eF` is not. `'c'` is the value of the
+byte between the quotes, and it must be exactly three bytes. A character is a
+byte (ADR 0004), so `'é'` is four bytes and not a number. `>NUMBER` takes no
+prefix, because the standard gives it none.
+
+`digit_value` is handed the radix rather than reading `BASE`, because a prefix
+gives a number a radix of its own. Its callers multiply by the same value, so
+they keep it in one register for both.
 
 The conversion itself is `number_impl`, and the word is a call to it.
 `interpret_source` calls the same routine for every name the dictionary does

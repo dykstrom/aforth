@@ -5,6 +5,8 @@
 build*/
 *.o
 *.out
+# The suite's expected output, which is source and not a build product.
+!test/cases/forth2012.out
 *.lst
 *.map
 *.bin

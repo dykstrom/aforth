@@ -89,3 +89,38 @@ prints "REFILL leaves a string alone" 'S" REFILL DROP 7 ." EVALUATE' '7  ok'
 
 # An empty string has nothing to interpret and is not an error.
 prints "EVALUATE takes the empty string" 'S" " EVALUATE 42 .' '42  ok'
+
+# SAVE-INPUT and RESTORE-INPUT. SI1 is the suite's own word: the first time it
+# moves >IN by nothing, and the second time, after the restore, by 15. That
+# skips RESTORE-INPUT and the first digit of the number, so 0 is the restore's
+# flag and 2345 says the text after SAVE-INPUT was read twice. The file cases
+# are in test/cases/file.sh.
+SI_DEFS='VARIABLE SI_INC 0 SI_INC !
+: SI1 SI_INC @ >IN +! 15 SI_INC ! ;'
+
+prints "RESTORE-INPUT goes back in a string" "$SI_DEFS
+S\" SAVE-INPUT SI1 RESTORE-INPUT 12345\" EVALUATE SI_INC @ .S" ' ok
+ ok
+<3> 0 2345 15  ok'
+prints "RESTORE-INPUT goes back on a typed line" "$SI_DEFS
+SAVE-INPUT SI1 RESTORE-INPUT 12345 SI_INC @ .S" ' ok
+ ok
+<3> 0 2345 15  ok'
+
+# The terminal has no earlier line to go back to, and true says so.
+prints "RESTORE-INPUT will not go back to a typed line" 'SAVE-INPUT
+RESTORE-INPUT .' ' ok
+-1  ok'
+
+# A record from another source is refused, here another string at another
+# address.
+prints "RESTORE-INPUT refuses another string" \
+  'S" SAVE-INPUT" EVALUATE S" RESTORE-INPUT ." EVALUATE' '-1  ok'
+
+# The record is six cells and its count. A count other than 6 is no record of
+# SAVE-INPUT's, and its items go all the same.
+prints "SAVE-INPUT leaves six cells and a count" 'SAVE-INPUT . DEPTH .' '6 6  ok'
+prints "RESTORE-INPUT refuses another count" '1 2 3 3 RESTORE-INPUT .S' \
+  '<1> -1  ok'
+raises "RESTORE-INPUT takes a negative count as too many" '-1 RESTORE-INPUT' \
+  'aforth: data stack underflow'

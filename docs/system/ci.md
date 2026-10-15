@@ -49,3 +49,12 @@ make BUILD=build-linux test
 
 `.gitignore` matches `build*/`, so a per-platform directory needs no line of its
 own. `make clean` on the host is the whole fix when the objects do get mixed.
+
+## A file git ignores passes locally
+
+`make test` and `make docker-test` both read the working tree. The Docker build
+copies `test/` and the other directories from it, and the repository has no
+`.dockerignore`, so a file that git ignores still reaches the image. CI checks
+out only what is committed. A new file that matches `.gitignore` therefore
+passes both local runs and is missing in CI. `.gitignore` ignores `*.out`, for
+example. Before you push a new data file, run `git check-ignore -v` on it.

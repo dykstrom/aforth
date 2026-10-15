@@ -179,10 +179,10 @@ goes in `lib/aforth.f` instead, and the table does not list those; see
 | `arithmetic.S` | the arithmetic, the mixed precision, the logic, the comparisons, and `udiv128` |
 | `memory.S` | `@ ! C@ C!` and the rest that address memory, and `HERE UNUSED PAD ALLOT , C, ALIGN` with the two routines that move the allocation pointer |
 | `output.S` | everything that prints, and the pictured output routines |
-| `input.S` | `SOURCE >IN SOURCE-ID REFILL ACCEPT KEY EVALUATE`, and the input source stack |
+| `input.S` | `SOURCE >IN SOURCE-ID SAVE-INPUT RESTORE-INPUT REFILL ACCEPT KEY EVALUATE`, and the input source stack |
 | `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl`, and `ENVIRONMENT?` |
 | `file.S` | `R/O OPEN-FILE CLOSE-FILE READ-FILE READ-LINE FILE-SIZE FILE-POSITION REPOSITION-FILE FILE-STATUS`, and `INCLUDE-FILE INCLUDED` with `include_impl` under them |
-| `compile.S` | `CREATE : ; :NONAME IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VALUE TO DEFER IS MARKER COMPILE, POSTPONE >BODY DOES>`, the string literals `S"`, `S\"` and `."`, `ABORT"`, and `header_impl` |
+| `compile.S` | `CREATE : ; :NONAME IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VALUE TO DEFER IS MARKER COMPILE, POSTPONE >BODY DOES>`, the string literals `S"`, `S\"`, `C"` and `."`, `ABORT"`, and `header_impl` |
 | `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE DO ?DO LOOP +LOOP I J UNLOOP LEAVE CASE OF ENDOF ENDCASE`, and the routines that write a branch distance |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
@@ -194,14 +194,15 @@ reach into `src/words/`.
 
 `DOCOL`, `DOCON`, `DOVAR`, `DODOES`, `DODEFER`, `DOMARKER`, `EXIT`, `EXECUTE`,
 `(STOP)`, `(LIT)`, `(BRANCH)`, `(0BRANCH)`, `(DO)`, `(LOOP)`, `(+LOOP)`,
-`(?DO)`, `(S")`, `(ABORT")`, `(DOES>)`, `(TO)` and `(DEFER)` stay in
+`(?DO)`, `(S")`, `(C")`, `(ABORT")`, `(DOES>)`, `(TO)` and `(DEFER)` stay in
 `src/interpreter.S`. They are the inner interpreter rather than words a program
-reaches for. The twelve after `(STOP)` are hidden for the same reason: each is
+reaches for. The thirteen after `(STOP)` are hidden for the same reason: each is
 the run-time half of a word the programmer writes, so a programmer who typed
 one would push, jump, print, store, strand a pair of cells or rewrite the
 newest word by whatever came next.
-`(S")` reads a count and then that many bytes rather than one cell; the shape
-is in [compiling.md](compiling.md). `(DO)` reads nothing out of the list, but
+`(S")` reads a count and then that many bytes rather than one cell, and
+`(C")` steps over a one-byte count and its bytes. The shapes are in
+[compiling.md](compiling.md). `(DO)` reads nothing out of the list, but
 leaves a frame on the return stack that only `(LOOP)`, `(+LOOP)`, `UNLOOP` or
 `LEAVE` takes off again; see [control-flow.md](control-flow.md).
 

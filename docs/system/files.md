@@ -53,6 +53,11 @@ the only position there is, so `FILE-POSITION` will be right without
 subtracting what was read but not yet given out — which is what a buffer would
 have cost.
 
+`file_read_line` also reports how many bytes the line took from the file, its
+newline and any carriage return included. `READ-LINE` ignores the number.
+`REFILL` keeps it in `UV_SRC_TAKEN`, so that `SAVE-INPUT` can find where the
+current line starts. See [input.md](input.md).
+
 The four ways it can end are four sentences of Forth-2012.
 
 | What arrived | u2 | flag | ior |

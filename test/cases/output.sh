@@ -47,6 +47,22 @@ prints "#S holds a high half larger than BASE" \
   '0 255 <# #S #> TYPE' '4703919738795935662080 ok'
 
 prints "HOLD puts a character in"  '0 0 <# 65 HOLD #> TYPE' 'A ok'
+
+# HOLDS holds the last byte first, so the string reads forwards in the result,
+# and words held before it end up after it. The cases are the suite's own.
+prints "HOLDS puts a string in" \
+  '0 0 <# S" Testing HOLDS" HOLDS #> TYPE' 'Testing HOLDS ok'
+prints "HOLDS goes in front of what is held" \
+  '123 0 <# #S BL HOLD S" works" HOLDS #> TYPE' 'works 123 ok'
+prints "HOLDS holds nothing for the empty string" \
+  '0 0 <# S" " HOLDS #> NIP .' '0  ok'
+prints "HOLDS works inside a definition" \
+  ': HLD HOLDS ; 0 0 <# S" abc" HLD #> TYPE' 'abc ok'
+
+# Every byte goes through HOLD, so a string larger than the buffer meets HOLD's
+# guard.
+raises "HOLDS guards the buffer" \
+  'CREATE B 5000 ALLOT 0 0 <# B 5000 HOLDS' 'aforth: pictured output overflow'
 prints "SIGN holds a minus for a negative" '255 0 <# #S -1 SIGN #> TYPE' '-255 ok'
 prints "SIGN holds nothing for a positive" '255 0 <# #S 1 SIGN #> TYPE' '255 ok'
 prints "#> reports the length"     '255 0 <# #S #> NIP .' '3  ok'

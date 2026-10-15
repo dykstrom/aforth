@@ -8,8 +8,9 @@
 # Every case pipes Forth source in and compares what comes out. The binary
 # reads until end of input, so each case gets its own run with a whole script
 # on stdin. The cases themselves are in test/cases/, one file per kind of word,
-# mirroring src/words/. This file holds the helpers they are written with, the
-# order they run in, and the coverage check at the end.
+# mirroring src/words/, and forth2012.sh, which runs the Forth-2012 test suite.
+# This file holds the helpers they are written with, the order they run in, and
+# the coverage check at the end.
 #
 # See docs/system/testing.md for how to write a case.
 
@@ -144,6 +145,7 @@ guards() {
 . "$HERE/cases/outer.sh"
 . "$HERE/cases/startup.sh"
 . "$HERE/cases/system.sh"
+. "$HERE/cases/forth2012.sh"
 
 # The guards have nothing to fire in the build that compiles them out, which is
 # the point of that build, so the whole file is left out of it. make passes its

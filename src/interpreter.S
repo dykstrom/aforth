@@ -218,11 +218,21 @@
 // start of the loop unless the index crossed the limit.
 //
 // Forth-2012 puts the end of the loop at the boundary between the limit minus
-// one and the limit, and asks whether the step carried the index over it. The
-// test below asks the same question the other way round: it subtracts the
-// limit from the index before and after the step, and ends the loop when those
-// two differ in sign. That is what makes a negative step count down to the
-// limit and stop on it, where the equality (LOOP) tests for would run past it.
+// one and the limit, and asks whether the step carried the index over it, in
+// either direction. Adding MIN-INT to index - limit moves that boundary onto
+// the one between MAX-INT and MIN-INT, and a signed add of the step crosses
+// that one exactly when it overflows. So the test is the V flag of one cmn.
+// That is what makes a negative step count down to the limit and stop on it,
+// where the equality (LOOP) tests for would run past it.
+//
+// Comparing the sign of index - limit before and after the step is not the
+// same test. That value also changes sign when it crosses MAX-INT, which a step
+// of 2^56 does after 128 turns of a loop from 0 to -1 that should run 256.
+//
+// The frame holds the index and the limit as they are, and the MIN-INT is
+// added here on every turn rather than kept in the frame, so that I stays one
+// load (ADR 0012). The eor adds it: adding the top bit and flipping it are the
+// same thing modulo 2^64.
 //
 // A step of one behaves as (LOOP) does, so LOOP could have compiled this word
 // and does not: (LOOP) reaches its own answer in two instructions fewer.
@@ -232,12 +242,12 @@
         ldr     x0, [IP], #8            // the distance
         RGET    0, x1                   // the index
         RGET    1, x2                   // the limit
-        sub     x3, x1, x2              // index - limit, before the step
+        sub     x3, x1, x2              // index - limit
+        eor     x3, x3, #(1 << 63)      // + MIN-INT: the boundary onto overflow
+        cmn     x3, TOS                 // does the step carry it over?
         add     x1, x1, TOS             // the new index
-        DPOPM
-        sub     x4, x1, x2              // index - limit, after it
-        eor     x3, x3, x4              // the sign bit differs iff it crossed
-        tbnz    x3, #63, 1f
+        DPOPM                           // a load, which leaves the flags alone
+        b.vs    1f
         RSET    0, x1
         add     IP, IP, x0, lsl #3      // round again
         NEXT
@@ -293,6 +303,24 @@
         add     IP, IP, x2              // past them, on the next cell
         DPUSH   x1
         DPUSH   x0
+        NEXT
+
+// (C"): push the counted string that follows this token in the list, and step
+// over it.
+//
+// What C" compiles. The layout is (S")'s with the count in one byte rather
+// than a cell, because a counted string is its count with the bytes straight
+// after it. The address pushed is the count's own. The padding still runs to
+// the next cell, so the token after the string is on a cell boundary.
+//
+// Hidden, as (S") is, and for the same reason.
+        DEFCODE "(C\")", 4, c_quote_run, F_HIDDEN      // ( -- c-addr )
+        ROOM    1
+        ldrb    w0, [IP]                // the count
+        DPUSH   IP
+        add     x0, x0, #8              // the count byte, and 7 to round up
+        and     x0, x0, #-8
+        add     IP, IP, x0              // past the bytes, on the next cell
         NEXT
 
 // (ABORT"): abort with the message under it when the flag under that is true.

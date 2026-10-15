@@ -12,8 +12,10 @@
 // Four user variables describe the source being read now: UV_TIB is its
 // address, UV_TIB_LEN how many bytes it holds, UV_TO_IN how far the parser has
 // read, and UV_SOURCE_ID where it came from. Three more say where an error
-// inside a file happened: UV_SRC_LINE, UV_SRC_NAME and UV_SRC_NAME_LEN. A
-// source pushed on top of another saves all seven and installs its own, so
+// inside a file happened: UV_SRC_LINE, UV_SRC_NAME and UV_SRC_NAME_LEN. The
+// eighth, UV_SRC_TAKEN, is how much of a file its current line took, which
+// SAVE-INPUT needs to find where the line starts. A source pushed on top of
+// another saves all eight and installs its own, so
 // every word that parses reads the same cells whatever is being read. src_push
 // and src_pop below are the only things that touch the stack of saved ones.
 //
@@ -60,7 +62,8 @@ refill_impl:
 
 // A file, read by the same file_read_line READ-LINE uses. x3 says whether a
 // newline ended the line, which is what tells a whole line from the first
-// 4096 bytes of one too long for the buffer.
+// 4096 bytes of one too long for the buffer. x4 is how many bytes the line
+// took from the file, kept for SAVE-INPUT.
 //
 // A read that fails ends the source rather than reporting. Forth-2012 makes an
 // I/O exception while reading an included file an ambiguous condition, and an
@@ -74,6 +77,7 @@ ri_file:
 
 // The line is counted before it is measured, so that a line too long for the
 // buffer is reported against its own number rather than the one before it.
+        str     x4, [UP, #UV_SRC_TAKEN]
         ldr     x4, [UP, #UV_SRC_LINE]
         add     x4, x4, #1
         str     x4, [UP, #UV_SRC_LINE]
@@ -89,6 +93,9 @@ ri_file:
 // The terminal, through libedit. Only its lines reach the history, which is
 // what read_line's third argument says: a program reading data is not a
 // command the user typed.
+//
+// Its lines are counted as a file's are. No message names them, but
+// RESTORE-INPUT needs to tell the line SAVE-INPUT saw from a later one.
 ri_terminal:
         ldr     x0, [UP, #UV_TIB]
         mov     x1, #TIB_SIZE
@@ -101,6 +108,9 @@ ri_terminal:
         b.hi    ri_too_long
         str     x0, [UP, #UV_TIB_LEN]
         str     xzr, [UP, #UV_TO_IN]
+        ldr     x4, [UP, #UV_SRC_LINE]
+        add     x4, x4, #1
+        str     x4, [UP, #UV_SRC_LINE]
 
 ri_true:
         mov     x0, #-1
@@ -179,7 +189,8 @@ ri_done:
 //
 // UV_TIB, UV_TIB_LEN, UV_TO_IN and UV_SOURCE_ID describe the source being read
 // now, and UV_SRC_LINE, UV_SRC_NAME and UV_SRC_NAME_LEN say where an error in
-// it should say it happened. A slot in the user area holds those seven cells
+// it should say it happened. UV_SRC_TAKEN is how much of a file its current
+// line took. A slot in the user area holds those eight cells
 // for each source under the current one. See src/include/machine.h for the
 // layout and docs/system/input.md for what nests.
 //
@@ -229,6 +240,8 @@ src_push:
         str     x3, [x0, #SRC_NAME]
         ldr     x3, [UP, #UV_SRC_NAME_LEN]
         str     x3, [x0, #SRC_NAME_LEN]
+        ldr     x3, [UP, #UV_SRC_TAKEN]
+        str     x3, [x0, #SRC_TAKEN]
 
         ldp     x0, x1, [sp, #16]
         ldr     x2, [sp, #32]
@@ -239,6 +252,7 @@ src_push:
         str     xzr, [UP, #UV_SRC_LINE]
         str     xzr, [UP, #UV_SRC_NAME]
         str     xzr, [UP, #UV_SRC_NAME_LEN]
+        str     xzr, [UP, #UV_SRC_TAKEN]
         mov     x0, #0
         ldp     x29, x30, [sp], #48
         ret
@@ -263,7 +277,7 @@ src_pop:
 1:      ldp     x29, x30, [sp], #16
         ret
 
-// Put the seven cells of the slot at x0 back into the user variables.
+// Put the eight cells of the slot at x0 back into the user variables.
         .p2align        2
 src_restore:
         ldr     x1, [x0, #SRC_TIB]
@@ -280,6 +294,8 @@ src_restore:
         str     x1, [UP, #UV_SRC_NAME]
         ldr     x1, [x0, #SRC_NAME_LEN]
         str     x1, [UP, #UV_SRC_NAME_LEN]
+        ldr     x1, [x0, #SRC_TAKEN]
+        str     x1, [UP, #UV_SRC_TAKEN]
         ret
 
 // Close x0 when it is a fileid, and do nothing when it is not. The terminal's
@@ -347,6 +363,139 @@ src_reset:
         ldr     TOS, [UP, #UV_SOURCE_ID]
         NEXT
 
+// SAVE-INPUT and RESTORE-INPUT.
+//
+// The record is the same six cells for every kind of source, and the count
+// that says so:
+//
+//   ( pos line len addr >in id 6 )
+//
+// id is SOURCE-ID, addr and len are SOURCE, and line is UV_SRC_LINE. pos is
+// where a file's current line starts, and 0 for the terminal or a string.
+//
+// RESTORE-INPUT goes back only to the source it is reading now, so a record
+// whose id is not SOURCE-ID fails. A string must be the same bytes at the same
+// address. The terminal and a file must be on the same line, except that a
+// file can also go back to an earlier one: it seeks to pos and reads that
+// line again. The flag is false when it went back and true when it could not.
+// Forth-2012 allows both failures.
+
+// A file has no buffer of its own, and READ-LINE has already left the kernel's
+// position past the current line. UV_SRC_TAKEN is how much the line took, so
+// the line starts that much before where the file stands. A file whose
+// position cannot be asked, such as a pipe, gives -1, and a restore to another
+// line then fails at the seek.
+        DEFCODE "SAVE-INPUT", 10, save_input    // ( -- xn ... x1 n )
+        ROOM    7
+        mov     x27, #0                 // pos, for the terminal or a string
+        ldr     x0, [UP, #UV_SOURCE_ID]
+        cbz     x0, 2f                  // the terminal
+        cmn     x0, #1
+        b.eq    2f                      // a string
+        mov     x1, #0
+        mov     x2, #1                  // from where the file stands
+        bl      file_seek
+        cbnz    x1, 1f
+        ldr     x1, [UP, #UV_SRC_TAKEN]
+        sub     x27, x0, x1
+        b       2f
+1:      mov     x27, #-1
+
+2:      DPUSH   x27
+        ldr     x0, [UP, #UV_SRC_LINE]
+        DPUSH   x0
+        ldr     x0, [UP, #UV_TIB_LEN]
+        DPUSH   x0
+        ldr     x0, [UP, #UV_TIB]
+        DPUSH   x0
+        ldr     x0, [UP, #UV_TO_IN]
+        DPUSH   x0
+        ldr     x0, [UP, #UV_SOURCE_ID]
+        DPUSH   x0
+        mov     x0, #6
+        DPUSH   x0
+        NEXT
+
+// A count other than 6 is no record of SAVE-INPUT's. Its items are dropped and
+// the flag is true. A negative count is more items than any stack holds.
+//
+// Going back to an earlier line of a file seeks to its start and calls
+// refill_impl, which reads it into the buffer and counts it, so UV_SRC_LINE is
+// set one short first. A seek or a read that fails leaves the file where it
+// failed, which only a file changed under aforth can cause.
+        DEFCODE "RESTORE-INPUT", 13, restore_input      // ( xn ... x1 n -- flag )
+        NEED    1
+        cmp     TOS, #6
+        b.eq    1f
+        tbnz    TOS, #63, rsi_negative
+        add     x0, TOS, #1
+        NEEDX   x0
+        DPOP    x0                      // n
+        cbz     x0, rsi_fail
+        sub     x0, x0, #1
+        add     DSP, DSP, x0, lsl #3
+        DPOPM                           // the last of them, and a new top
+        b       rsi_fail
+
+1:      NEED    7
+        DPOP    x0                      // 6
+        DPOP    x1                      // id
+        DPOP    x2                      // >in
+        DPOP    x3                      // addr
+        DPOP    x4                      // len
+        DPOP    x5                      // line
+        DPOP    x6                      // pos
+        ldr     x7, [UP, #UV_SOURCE_ID]
+        cmp     x1, x7
+        b.ne    rsi_fail
+        cbz     x1, rsi_terminal
+        cmn     x1, #1
+        b.eq    rsi_string
+
+        ldr     x7, [UP, #UV_SRC_LINE]
+        cmp     x5, x7
+        b.eq    rsi_here                // the same line, still in the buffer
+        mov     x27, x2                 // >in and the line, across the calls
+        mov     x28, x5
+        mov     x0, x1                  // the fileid
+        mov     x1, x6                  // where the line starts
+        mov     x2, #0                  // from the start of the file
+        bl      file_seek
+        cbnz    x1, rsi_fail
+        sub     x0, x28, #1
+        str     x0, [UP, #UV_SRC_LINE]
+        bl      refill_impl
+        cbz     x0, rsi_fail            // the end of the file, or an error
+        mov     x2, x27
+        b       rsi_here
+
+rsi_string:
+        ldr     x7, [UP, #UV_TIB]
+        cmp     x3, x7
+        b.ne    rsi_fail
+        ldr     x7, [UP, #UV_TIB_LEN]
+        cmp     x4, x7
+        b.ne    rsi_fail
+        b       rsi_here
+
+rsi_terminal:
+        ldr     x7, [UP, #UV_SRC_LINE]
+        cmp     x5, x7
+        b.ne    rsi_fail
+
+rsi_here:
+        str     x2, [UP, #UV_TO_IN]
+        DPUSH   xzr
+        NEXT
+
+rsi_fail:
+        mov     x0, #-1
+        DPUSH   x0
+        NEXT
+
+rsi_negative:
+        b       ds_underflow
+
 // EVALUATE makes the string the source, interprets it, and puts the source
 // back. It has to interpret and return, so that the word after it in a
 // definition runs afterwards, which is why aforth_enter nests: interpret_source
@@ -354,7 +503,7 @@ src_reset:
 // is still open.
 //
 // The string is the input buffer, not a copy of one. Forth-2012 says so, and it
-// is what lets a level cost four cells and no buffer.
+// is what lets a string level need no buffer of its own.
 //
 // An error inside the string pops the source first and raises afterwards, so
 // that nothing is left stacked even though machine_quit would drop it anyway.

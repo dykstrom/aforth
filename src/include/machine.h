@@ -199,6 +199,8 @@
 #define UV_LEAVE        248     // the newest LEAVE waiting for a LOOP to
                                 // resolve it, an offset from DBASE; 0 in a
                                 // loop that holds none, -1 outside a loop
+#define UV_SRC_TAKEN    256     // bytes the current file line used, its
+                                // newline included
 
 // The input source stack.
 //
@@ -211,10 +213,16 @@
 //
 // Three more cells ride along so that an error inside an included file can say
 // where it happened. REFILL counts the lines of a file into UV_SRC_LINE, and
-// include_impl puts the name it opened in UV_SRC_NAME. A terminal or a string
-// level leaves all three at 0.
+// include_impl puts the name it opened in UV_SRC_NAME. REFILL counts the
+// terminal's lines too, so that RESTORE-INPUT can tell one typed line from the
+// next. A string level leaves all three at 0, and so does the terminal for the
+// name.
 //
-// Eight levels of seven cells is 448 bytes, which the user area holds without
+// UV_SRC_TAKEN is how many bytes the current line of a file took from the
+// file, its newline included. The kernel's position is already past the line,
+// so SAVE-INPUT subtracts this from it to find where the line starts.
+//
+// Eight levels of eight cells is 512 bytes, which the user area holds without
 // the region changing. A source pushed on a full stack raises
 // ERR_SOURCE_TOO_DEEP.
 //
@@ -223,10 +231,10 @@
 // copied and no line buffer is needed. A file source cannot do that, and
 // include_impl carves its line buffer out of its own C stack frame.
 // The stack starts at 512 rather than just above the cells, so that adding a
-// user variable does not move it. The cells reach 256 now.
+// user variable does not move it. The cells reach 264 now.
 #define SRC_STACK_OFF   512
 #define SRC_LEVELS      8
-#define SRC_SLOT        56
+#define SRC_SLOT        64
 
 #define SRC_TIB         0
 #define SRC_TIB_LEN     8
@@ -235,6 +243,7 @@
 #define SRC_LINE        32
 #define SRC_NAME        40
 #define SRC_NAME_LEN    48
+#define SRC_TAKEN       56
 
 .if (SRC_STACK_OFF + SRC_LEVELS * SRC_SLOT) > USER_AREA_SIZE
 .error "aforth: the input source stack does not fit the user area"
@@ -466,15 +475,15 @@
 .endm
 
 // Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the thirteen after them are raised by the words that meet them —
+// first four; the fourteen after them are raised by the words that meet them —
 // a divide by zero, a pictured output overflow, an input line too long for the
 // buffer or a string too long for a transient one, a name the dictionary does
 // not hold, a defining word with no name left on the line, a name too long to
 // count in one byte, a dictionary with no room left, a control-flow word given
 // something that is not a place in the dictionary, a source stack with no
 // level free, a file that ends inside a comment, a file INCLUDED could not
-// open, a deferred word run before IS gave it a word to run, and an ABORT"
-// whose flag was true.
+// open, a deferred word run before IS gave it a word to run, a C" string too
+// long to count in one byte, and an ABORT" whose flag was true.
 //
 // The last three are not failures to report. ABORT and QUIT leave the machine
 // the same way an error does, because they must not return to the word that ran
@@ -508,9 +517,10 @@
 #define ERR_UNTERMINATED_COMMENT 14
 #define ERR_OPEN_FAILED         15
 #define ERR_DEFER_UNSET         16
-#define ERR_ABORT_QUOTE         17
-#define ERR_REPORTED            18
-#define ERR_ABORT               19
-#define ERR_QUIT                20
+#define ERR_STRING_TOO_LONG     17
+#define ERR_ABORT_QUOTE         18
+#define ERR_REPORTED            19
+#define ERR_ABORT               20
+#define ERR_QUIT                21
 
 #endif // AFORTH_MACHINE_H

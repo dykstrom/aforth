@@ -348,4 +348,49 @@ raises "a file line too long for the buffer" \
   "aforth: input line too long
 aforth:   in $FILE_DIR/long.f, line 1"
 
+# SAVE-INPUT and RESTORE-INPUT in a file. On the same line a restore only moves
+# >IN, as it does in a string: SI1 is the suite's word, explained in
+# test/cases/input.sh.
+printf '%s\n' 'VARIABLE SI_INC 0 SI_INC !' \
+  ': SI1 SI_INC @ >IN +! 15 SI_INC ! ;' \
+  'SAVE-INPUT SI1 RESTORE-INPUT 12345 SI_INC @ .S' > "$FILE_DIR/si.f"
+prints "RESTORE-INPUT goes back on a line of a file" \
+  "INCLUDE $FILE_DIR/si.f" '<3> 0 2345 15  ok'
+
+# To an earlier line, it seeks back and reads that line again. The record is
+# saved on line 2 and restored on line 4, so lines 3 and 4 run twice. BACK
+# finds no record the second time, which ends the loop. 1 and 2 are the counts,
+# 0 is the restore's flag, and the last 2 comes from line 5.
+SI_BACK='VARIABLE N 0 N ! : BACK DEPTH IF RESTORE-INPUT . THEN ;
+SAVE-INPUT
+1 N +! N @ .
+BACK'
+printf '%s\n' "$SI_BACK" 'N @ .' > "$FILE_DIR/back.f"
+prints "RESTORE-INPUT reads an earlier line of a file again" \
+  "INCLUDE $FILE_DIR/back.f" '1 0 2 2  ok'
+
+# A carriage return before each newline is a byte the line took from the file
+# too, and the seek back has to count it.
+printf '%s\n' "$SI_BACK" 'N @ .' | sed 's/$/\r/' > "$FILE_DIR/backcr.f"
+prints "RESTORE-INPUT counts a carriage return" \
+  "INCLUDE $FILE_DIR/backcr.f" '1 0 2 2  ok'
+
+# The line read again is counted again, so an error after it names its own
+# line.
+printf '%s\n' "$SI_BACK" 'NOSUCHWORD' > "$FILE_DIR/backerr.f"
+raises "a line after a restore reports its own number" \
+  "INCLUDE $FILE_DIR/backerr.f" "aforth: undefined word: NOSUCHWORD
+aforth:   in $FILE_DIR/backerr.f, line 5"
+
+# A record belongs to the source it was saved in. A string the file evaluates
+# is another source, and so is the terminal once the file has ended.
+printf '%s\n' 'SAVE-INPUT S" RESTORE-INPUT ." EVALUATE' > "$FILE_DIR/sieval.f"
+prints "RESTORE-INPUT refuses a file record in a string" \
+  "INCLUDE $FILE_DIR/sieval.f" '-1  ok'
+printf '%s\n' 'SAVE-INPUT' > "$FILE_DIR/sikeep.f"
+prints "RESTORE-INPUT refuses a file record at the terminal" \
+  "INCLUDE $FILE_DIR/sikeep.f
+RESTORE-INPUT ." ' ok
+-1  ok'
+
 rm -rf "$FILE_DIR"

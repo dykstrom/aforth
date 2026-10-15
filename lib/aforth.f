@@ -18,6 +18,10 @@
 : .R ( n1 n2 -- ) >R DUP ABS 0 <# #S ROT SIGN #> R> OVER - SPACES TYPE ;
 : U.R ( u n -- ) >R 0 <# #S #> R> OVER - SPACES TYPE ;
 
+\ The buffer fills downward, so the last byte goes in first and the string
+\ reads forwards in the result.
+: HOLDS ( c-addr u -- ) BEGIN DUP WHILE 1- 2DUP + C@ HOLD REPEAT 2DROP ;
+
 : .( ( "ccc<paren>" -- ) [CHAR] ) PARSE TYPE ; IMMEDIATE
 
 \ With no name, CHAR reads the byte just past the parse area. [CHAR] raises

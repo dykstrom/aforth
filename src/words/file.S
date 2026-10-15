@@ -18,11 +18,14 @@
 // with symbols only that one assembler pass has.
 
 // Read one line from descriptor x0 into the buffer at x1, at most x2 bytes.
-// Returns the length in x0, the flag in x1, an ior in x2, and in x3 whether a
-// newline ended the line.
+// Returns the length in x0, the flag in x1, an ior in x2, in x3 whether a
+// newline ended the line, and in x4 how many bytes the line took from the
+// file, its newline and any carriage return included.
 //
-// READ-LINE ignores x3. refill_impl reads it, because a full buffer that no
-// newline ended is how a file line too long for the buffer arrives.
+// READ-LINE ignores x3 and x4. refill_impl reads x3, because a full buffer that
+// no newline ended is how a file line too long for the buffer arrives. It keeps
+// x4 for SAVE-INPUT, which subtracts it from the file position to find where
+// the line started.
 //
 // It reads a whole buffer's worth and then puts the file position back to just
 // after the newline it found. Two system calls a line, and no state: the
@@ -86,6 +89,8 @@ frl_newline:
         mov     x1, #-1
         mov     x2, #0
         mov     x3, #-1                 // a newline ended it
+        ldr     x4, [sp, #48]
+        add     x4, x4, #1              // the bytes up to and with the newline
         b       frl_done
 
 // No newline in what arrived. Either the buffer filled first and the line runs
@@ -96,6 +101,7 @@ frl_no_newline:
         mov     x1, #-1
         mov     x2, #0
         mov     x3, #0                  // no newline, so it may run on
+        mov     x4, x0                  // every byte read
         b       frl_done
 
 frl_eof:
@@ -103,6 +109,7 @@ frl_eof:
         mov     x1, #0
         mov     x2, #0
         mov     x3, #0
+        mov     x4, #0
         b       frl_done
 
 frl_failed:
@@ -110,6 +117,7 @@ frl_failed:
         mov     x0, #0
         mov     x1, #0
         mov     x3, #0
+        mov     x4, #0
 
 frl_done:
         ldp     x29, x30, [sp], #64

@@ -316,10 +316,10 @@ hi_full:
         RAISE
         NEXT
 
-// The two string literals, and ABORT", which lays its message down the same
-// way.
+// The string literals S", C" and .", and ABORT", which lays its message down
+// the same way.
 //
-// All three are immediate and all three parse with a double quote as the
+// All four are immediate and all four parse with a double quote as the
 // delimiter, starting where >IN stands. parse_name_impl has already left it
 // just past the one space that ended the word's own name, so S" ccc" takes ccc,
 // and a delimiter that comes straight away gives the empty string.
@@ -330,12 +330,12 @@ hi_full:
 // a quote the user does not know it wants is a trap.
 //
 // While compiling, each lays the bytes inside the definition through
-// dict_compile_string below. While interpreting, S" copies them into a
-// transient buffer, ." writes them straight out, and ABORT" leaves them where
-// they were parsed. Forth-2012 leaves the interpretation semantics of all
-// three undefined in Core and defines S" 's in the File-Access word set; what
-// ." and ABORT" do while interpreting is aforth's own, and
-// docs/system/output.md says so for .".
+// dict_compile_string below, or C" through dict_compile_counted. While
+// interpreting, S" and C" copy them into a transient buffer, ." writes them
+// straight out, and ABORT" leaves them where they were parsed. Forth-2012
+// leaves the interpretation semantics of all four undefined in Core and
+// defines S" 's in the File-Access word set; what the other three do while
+// interpreting is aforth's own, and docs/system/output.md says so for .".
 
 // Copy the string at x0, x1 bytes long, into the next transient buffer, and
 // return where it went in x0 with the length still in x1.
@@ -394,27 +394,50 @@ dict_compile_string:
         add     x3, x2, x3              // where HERE ends up
         ldr     x4, [UP, #UV_DICT_END]
         cmp     x3, x4
-        b.hi    1f
+        b.hi    dcs_full
 
         mov     x4, #TOK_s_quote_run
         str     x4, [x2], #8
         str     x1, [x2], #8
+        b       dcs_copy
+
+// The same for C": (C")'s token, the count in one byte, the bytes, and zeroes
+// up to the next cell. The caller has checked that the count fits in the byte.
+// The copy and the pad are dict_compile_string's own.
+        .p2align        2
+dict_compile_counted:
+        ldr     x2, [UP, #UV_HERE]
+        add     x3, x1, #8              // the count byte, and 7 to round up
+        and     x3, x3, #-8             // the count and the bytes, padded
+        add     x3, x3, #8              // the token
+        add     x3, x2, x3              // where HERE ends up
+        ldr     x4, [UP, #UV_DICT_END]
+        cmp     x3, x4
+        b.hi    dcs_full
+
+        mov     x4, #TOK_c_quote_run
+        str     x4, [x2], #8
+        strb    w1, [x2], #1
+        // fall through
+
+dcs_copy:
         mov     x5, x0                  // the bytes
         mov     x6, x1                  // how many
-2:      cbz     x6, 3f
+1:      cbz     x6, 2f
         ldrb    w7, [x5], #1
         strb    w7, [x2], #1
         sub     x6, x6, #1
-        b       2b
-3:      cmp     x2, x3
-        b.hs    4f
+        b       1b
+2:      cmp     x2, x3
+        b.hs    3f
         strb    wzr, [x2], #1
-        b       3b
-4:      str     x3, [UP, #UV_HERE]
+        b       2b
+3:      str     x3, [UP, #UV_HERE]
         mov     x0, #0
         ret
 
-1:      mov     x0, #ERR_DICT_FULL
+dcs_full:
+        mov     x0, #ERR_DICT_FULL
         ret
 
         DEFCODE "S\"", 2, s_quote, F_IMMEDIATE  // ( "ccc<quote>" -- c-addr u )
@@ -436,6 +459,42 @@ dict_compile_string:
 1:      bl      dict_compile_string
         RAISE
         NEXT
+
+// C" is S" for a counted string, the form FIND and WORD use: a count byte with
+// the bytes after it, pushed as the address of the count. One byte counts to
+// 255, so a longer string raises ERR_STRING_TOO_LONG, before anything is
+// written. Forth-2012 makes that an ambiguous condition.
+//
+// While compiling, the string goes into the definition through
+// dict_compile_counted, and (C") pushes it. While interpreting, it goes into
+// the next transient buffer, as S" puts its own. Forth-2012 leaves that
+// undefined, so the interpreted behaviour is aforth's own. A buffer is never
+// smaller than the input buffer, so 256 bytes always fit.
+        DEFCODE "C\"", 2, c_quote, F_IMMEDIATE  // ( "ccc<quote>" -- c-addr )
+        mov     x0, #34                 // a double quote
+        bl      parse_impl
+        cmp     x1, #255
+        b.hi    2f
+        ldr     x2, [UP, #UV_STATE]
+        cbnz    x2, 1f
+
+        ROOM    1
+        bl      sbuf_next               // the buffer in x2, x0 and x1 kept
+        strb    w1, [x2]
+        DPUSH   x2
+        mov     x3, x0
+        add     x0, x2, #1              // to, past the count
+        mov     x2, x1                  // how many
+        mov     x1, x3                  // from
+        bl      CSYM(memcpy)
+        NEXT
+
+1:      bl      dict_compile_counted
+        RAISE
+        NEXT
+
+2:      mov     x0, #ERR_STRING_TOO_LONG
+        b       machine_error
 
 // S-backslash-quote, below, is S" with escapes: a backslash and the character
 // after it stand for one byte, or two for \m, and a quote after a backslash

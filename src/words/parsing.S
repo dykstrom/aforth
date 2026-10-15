@@ -78,12 +78,17 @@ df_none:
         ret
         FUNC_SIZE(dict_find)
 
-// The value of the digit in w0, or -1 when it is not a digit in BASE.
+// The value of the digit in w0, or -1 when it is not a digit in the radix in
+// x7. Changes x0, x1 and x2 and nothing else.
 //
 // The one place that knows the digit set, so >NUMBER and ?NUMBER cannot
 // disagree about it, the way # is the one place for output. Letters fold, so
 // ff and FF are the same number, and the characters between '9' and 'A' are
 // rejected rather than read as digits above nine.
+//
+// The caller passes the radix rather than this routine reading BASE, because
+// a number written with a prefix such as $ has a radix of its own. Both
+// callers multiply by the radix as well, so they hold it in x7 anyway.
         .p2align        2
 digit_value:
         sub     w1, w0, #48             // '0'
@@ -97,8 +102,7 @@ digit_value:
         cmp     w1, #36
         b.hs    dv_bad
 
-1:      ldr     x2, [UP, #UV_BASE]
-        cmp     x1, x2
+1:      cmp     x1, x7
         b.hs    dv_bad
         mov     x0, x1
         ret
@@ -110,8 +114,17 @@ dv_bad:
 // Convert the whole name at x0, x1 bytes long, to one cell.
 //
 // Returns the value in x0 and a true flag in x1, or 0 and 0 when the name is
-// not a number in BASE. A leading minus is allowed, and every other character
-// must convert: a name that is half a number is not a number.
+// not a number. Forth-2012 lets a text interpreter read three forms:
+//
+//   'c'     exactly three bytes, a quote either side: the middle byte's value
+//   #-12    a prefix, # for decimal, $ for hex or % for binary, which sets the
+//           radix for this number alone and leaves BASE as it was
+//   -12     no prefix, in BASE
+//
+// A minus goes after the prefix and before the digits, and every other
+// character must convert: a name that is half a number is not a number. A
+// character is a byte (ADR 0004), so a quote round a two-byte character is
+// four bytes and not a number.
 //
 // ?NUMBER is this and nothing more, and the outer interpreter calls it for
 // every name the dictionary does not hold, so the word and the interpreter
@@ -125,6 +138,37 @@ number_impl:
         mov     x3, x0                  // where the characters are
         mov     x4, x1                  // how many are left
         cbz     x4, ni_bad
+
+        cmp     x4, #3                  // 'c'?
+        b.ne    ni_radix
+        ldrb    w0, [x3]
+        cmp     w0, #39                 // a quote
+        b.ne    ni_radix
+        ldrb    w0, [x3, #2]
+        cmp     w0, #39
+        b.ne    ni_radix
+        ldrb    w5, [x3, #1]
+        b       ni_good
+
+ni_radix:
+        ldr     x7, [UP, #UV_BASE]      // the radix, unless a prefix names one
+        ldrb    w0, [x3]
+        mov     x6, #10
+        cmp     w0, #35                 // '#'
+        b.eq    ni_prefix
+        mov     x6, #16
+        cmp     w0, #36                 // '$'
+        b.eq    ni_prefix
+        mov     x6, #2
+        cmp     w0, #37                 // '%'
+        b.ne    ni_sign
+ni_prefix:
+        mov     x7, x6
+        add     x3, x3, #1
+        sub     x4, x4, #1
+        cbz     x4, ni_bad              // a prefix on its own is not a number
+
+ni_sign:
         mov     x10, #0                 // was there a minus?
         ldrb    w0, [x3]
         cmp     w0, #45                 // '-'
@@ -139,15 +183,15 @@ number_impl:
         bl      digit_value
         cmn     x0, #1
         b.eq    ni_bad                  // one character that is not a digit
-        ldr     x7, [UP, #UV_BASE]
         mul     x5, x5, x7
         add     x5, x5, x0
         add     x3, x3, #1
         sub     x4, x4, #1
         b       2b
-3:      cbz     x10, 4f
+3:      cbz     x10, ni_good
         neg     x5, x5
-4:      mov     x0, x5
+ni_good:
+        mov     x0, x5
         mov     x1, #-1
         ldp     x29, x30, [sp], #16
         ret
@@ -472,12 +516,12 @@ paren_unterminated:
         DGETM   0, x3                   // where they are
         DGETM   1, x6                   // the accumulator, high half
         DGETM   2, x5                   // and low
+        ldr     x7, [UP, #UV_BASE]      // the radix, which takes no prefix here
 1:      cbz     x4, 2f
         ldrb    w0, [x3]
         bl      digit_value
         cmn     x0, #1
         b.eq    2f
-        ldr     x7, [UP, #UV_BASE]
         umulh   x8, x5, x7
         mul     x5, x5, x7
         mul     x9, x6, x7

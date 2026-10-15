@@ -135,6 +135,7 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 | `ERR_UNTERMINATED_COMMENT` | `aforth: unterminated comment` |
 | `ERR_OPEN_FAILED` | `aforth: cannot open file: ` and the name |
 | `ERR_DEFER_UNSET` | `aforth: deferred word not set` |
+| `ERR_STRING_TOO_LONG` | `aforth: counted string too long` |
 | `ERR_ABORT_QUOTE` | `aforth: ` and the program's message, or `aforth: aborted` when the message is empty |
 
 `ERR_REPORTED`, `ERR_ABORT` and `ERR_QUIT` print nothing and stay the three

@@ -26,6 +26,7 @@ input. The README's Status section lists what works today.
 | `src/include/` | Headers: `platform.h` for macOS/Linux differences, `machine.h` for the registers and the region, `dict.h` for the dictionary format. |
 | `lib/` | `aforth.f`, the system file: words written in Forth, such as `WITHIN` and `VARIABLE`. Cold start includes it before the prompt. `docs/system/startup.md` says which words belong there. |
 | `test/` | `run-tests.sh` and the cases in `test/cases/`, one file per kind of word. See `docs/system/testing.md`. |
+| `test/forth2012/` | Files copied unchanged from the Forth-2012 test suite, and a README naming their commit and terms. `test/cases/forth2012.sh` runs them. See `docs/system/testing.md`. |
 | `test/bench/` | Benchmarks and the harness that times them, not part of `make test`. See `docs/system/benchmark.md`. |
 | `docker/` | The Linux/ARM64 build and test environment. |
 | `.github/workflows/` | CI, one workflow per platform. |
@@ -98,7 +99,9 @@ once shipped, and `docs/working-notes/`, frozen once promoted.
 - Write errors with `write_stderr` in `src/machine.S`, not through `stderr`,
   whose symbol differs per platform.
 - Link no GPL library, because aforth is Apache-2.0 (ADR 0002). That rules out
-  GNU readline. Give every new source file the two SPDX header lines.
+  GNU readline. Give every new source file the two SPDX header lines. The
+  files in `test/forth2012/` are the exception: they are copied from upstream
+  and never edited, so they carry their own terms and no SPDX line (ADR 0015).
 - VS Code's C/C++ extension parses `src/include/*.h` as C++ and pins
   `cpptools-srv` at full CPU. Map `*.S` and `src/include/*.h` to an assembly
   grammar in `files.associations`, and list both in `C_Cpp.files.exclude`, in

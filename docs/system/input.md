@@ -5,7 +5,7 @@ routines that call the library and the terminal are `read_line` and `read_byte`
 in `src/machine.S`, and the buffer they fill is the input area of the region
 described in `src/include/machine.h`.
 
-## The seven user variables, and the stack of sources under them
+## The eight user variables, and the stack of sources under them
 
 Four cells describe the source being read now. `UV_TIB` is its address,
 `UV_TIB_LEN` how many bytes it holds, `UV_TO_IN` how far a parser has read, and
@@ -16,10 +16,16 @@ Four cells describe the source being read now. `UV_TIB` is its address,
 Three more ride along so that an error inside an included file can say where it
 happened. `UV_SRC_LINE` is which line of the file the level is on, and
 `UV_SRC_NAME` and `UV_SRC_NAME_LEN` are the name it was opened by. `REFILL`
-counts the lines and `include_impl` sets the name. A terminal or a string level
-leaves all three at 0, and no word reads any of them.
+counts the lines and `include_impl` sets the name. `REFILL` counts the
+terminal's lines too, because `RESTORE-INPUT` needs to tell one typed line from
+the next. No message names a terminal line. A string level leaves all three at
+0, and the terminal has no name.
 
-A source pushed on top of another saves those seven cells into a slot in the
+The eighth, `UV_SRC_TAKEN`, is how many bytes the current line of a file took
+from the file, its newline included. `SAVE-INPUT` needs it to find where the
+line starts. See [Going back in the input](#going-back-in-the-input).
+
+A source pushed on top of another saves those eight cells into a slot in the
 user area and installs its own. `src_push`, `src_pop`, `src_restore` and
 `src_reset` in `src/words/input.S` are the only routines that touch the stack of
 saved ones, so every word that parses reads the same cells however deep the
@@ -93,6 +99,50 @@ A read that fails ends a file source rather than reporting. Forth-2012 makes an
 I/O exception while reading an included file an ambiguous condition, and an
 invalid fileid handed to `INCLUDE-FILE` is the way to reach it. That include
 finishes having interpreted nothing.
+
+## Going back in the input
+
+`SAVE-INPUT` leaves a record of where the current source stands, and
+`RESTORE-INPUT` goes back there. The record is the same six cells for every
+kind of source, under a count of 6:
+
+```
+( pos line len addr >in id 6 )
+```
+
+`id` is `SOURCE-ID`, `addr` and `len` are `SOURCE`, and `line` is
+`UV_SRC_LINE`. `pos` is the file position where a file's current line starts,
+and 0 for the terminal or a string.
+
+`RESTORE-INPUT` returns false when it went back and true when it could not.
+Forth-2012 lets it fail on a record from another source, and on a source that
+cannot go back. aforth goes back only within the source it is reading now.
+
+| Source | Goes back when | And then |
+|--------|----------------|----------|
+| a string | `id`, `addr` and `len` match | sets `>IN` |
+| the terminal | `id` and `line` match | sets `>IN` |
+| a file, on the same line | `id` and `line` match | sets `>IN` |
+| a file, on another line | `id` matches | seeks to `pos`, reads that line again, sets `>IN` |
+
+Every other record gives true. A count other than 6 gives true too, and its
+items are dropped. A negative count raises a data stack underflow, because no
+stack holds that many items.
+
+A file has no buffer of its own, and `READ-LINE` leaves the kernel's position
+just past the line it read. So `SAVE-INPUT` asks for the position with one
+`lseek` and subtracts `UV_SRC_TAKEN`. That costs nothing while a file is read,
+and one system call when `SAVE-INPUT` runs. A file whose position cannot be
+asked, such as a pipe, gives `pos` -1, and a restore to another line then fails
+at the seek.
+
+Going back to an earlier line sets `UV_SRC_LINE` one short and calls
+`refill_impl`, which reads the line and counts it. So an error after the
+restore names the right line. The lines after it are read again in turn, as
+they were the first time.
+
+A record whose source has ended is not recognised reliably. A file's fileid can
+be reused by a later file, and Forth-2012 leaves that ambiguous.
 
 ## libedit, through readline's API
 

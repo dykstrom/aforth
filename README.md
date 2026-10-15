@@ -7,12 +7,10 @@ A Forth system written in ARM64 assembly, targeting Forth-2012.
 
 ## Status
 
-Early development. aforth reads Forth at a prompt and runs it until `BYE` or
-end of input. In the terms Forth-2012 uses to label a system, aforth is:
+In the terms Forth-2012 uses to label a system, aforth is:
 
 - Providing the Core word set
-- Providing name(s) from the Core Extensions word set: all but `C"`, `HOLDS`,
-  `RESTORE-INPUT`, `SAVE-INPUT` and `[COMPILE]`
+- Providing name(s) from the Core Extensions word set: all but `[COMPILE]`
 - Providing name(s) from the File-Access word set: all but `BIN`,
   `CREATE-FILE`, `DELETE-FILE`, `R/W`, `RESIZE-FILE`, `W/O`, `WRITE-FILE` and
   `WRITE-LINE`
@@ -20,6 +18,9 @@ end of input. In the terms Forth-2012 uses to label a system, aforth is:
   `INCLUDE`
 - Providing name(s) from the Programming-Tools word set: `.S` and `WORDS`
 - Providing name(s) from the Programming-Tools Extensions word set: `BYE`
+
+`make test` runs the Core and Core Extension files of the Forth-2012 test
+suite, and they report no errors.
 
 At start-up aforth reads two files: the system file `aforth.f` that ships
 beside the binary, and the user's own `init.f` under
