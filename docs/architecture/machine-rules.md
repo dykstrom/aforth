@@ -66,6 +66,17 @@ The descriptive side — what the code does today — is in
   take the text from `quit_report`, MUST raise `ERR_REPORTED` afterwards so that nothing prints
   twice, and MUST pass `ERR_ABORT` and `ERR_QUIT` on untouched, neither being a failure.
   Source: [ADR 0010](../adr/0010-report-a-located-error-as-the-machine-unwinds.md).
+- A word that reports early MUST NOT report while a `CATCH` is open, which `UV_CATCH_DEPTH` above 0
+  says. It MUST pass the number up unchanged instead, so that `CATCH` hands the program the code
+  of what failed and nothing reaches stderr. Source:
+  [ADR 0017](../adr/0017-report-nothing-from-an-included-file-under-catch.md).
+- An error number MUST be the code Forth-2012 gives the condition in its table of `THROW` codes.
+  A condition the table has no code for MUST take a system code, from -256 down. `CATCH` hands
+  the number to a program as it stands, and a program reads it as the standard's code. Source:
+  [ADR 0016](../adr/0016-use-the-forth-2012-throw-codes-as-error-numbers.md).
+- `CATCH` MUST NOT catch `ERR_QUIT`. `QUIT` empties the return stack, which takes every `CATCH`
+  frame with it, so `CATCH` MUST raise `ERR_QUIT` again. Source:
+  [ADR 0016](../adr/0016-use-the-forth-2012-throw-codes-as-error-numbers.md).
 - A routine that a word calls while that word holds a resource MUST report an error by returning
   a number, not by raising one. A raise unwinds to the last `aforth_enter`, past the frame that
   would release the resource. `interpret_source`, `refill_impl` and `src_push` all report for

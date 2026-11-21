@@ -16,7 +16,7 @@ the most accurate picture of how things actually work.
 | [`output.md`](output.md) | the one path every printed byte takes, and how a number is formatted |
 | [`input.md`](input.md) | how a line arrives, how input sources nest, and what `KEY` does to the terminal |
 | [`parsing.md`](parsing.md) | how a name is cut out and looked up |
-| [`outer-interpreter.md`](outer-interpreter.md) | the `QUIT` loop, and the one path every error takes |
+| [`outer-interpreter.md`](outer-interpreter.md) | the `QUIT` loop, the one path every error takes, its THROW code, and `CATCH` and `THROW` |
 | [`compiling.md`](compiling.md) | how the dictionary grows, and what `:` and `;` build |
 | [`control-flow.md`](control-flow.md) | how a definition branches |
 | [`files.md`](files.md) | how a file is opened, read and included, and what an ior carries |

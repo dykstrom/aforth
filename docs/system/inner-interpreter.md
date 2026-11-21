@@ -182,8 +182,9 @@ goes in `lib/aforth.f` instead, and the table does not list those; see
 | `input.S` | `SOURCE >IN SOURCE-ID SAVE-INPUT RESTORE-INPUT REFILL ACCEPT KEY EVALUATE`, and the input source stack |
 | `parsing.S` | the parsers, `dict_find`, `digit_value`, `number_impl`, and `ENVIRONMENT?` |
 | `file.S` | `R/O OPEN-FILE CLOSE-FILE READ-FILE READ-LINE FILE-SIZE FILE-POSITION REPOSITION-FILE FILE-STATUS`, and `INCLUDE-FILE INCLUDED` with `include_impl` under them |
-| `compile.S` | `CREATE : ; :NONAME IMMEDIATE [ ] LITERAL [CHAR] CONSTANT VALUE TO DEFER IS MARKER COMPILE, POSTPONE >BODY DOES>`, the string literals `S"`, `S\"`, `C"` and `."`, `ABORT"`, and `header_impl` |
+| `compile.S` | `CREATE : ; :NONAME IMMEDIATE [ ] LITERAL CONSTANT VALUE TO DEFER IS MARKER COMPILE, POSTPONE >BODY DOES>`, the string literals `S"`, `S\"`, `C"` and `."`, `ABORT"`, and `header_impl` |
 | `control.S` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN RECURSE DO ?DO LOOP +LOOP I J UNLOOP LEAVE CASE OF ENDOF ENDCASE`, and the routines that write a branch distance |
+| `exception.S` | `CATCH THROW` |
 | `quit.S` | `STATE ABORT QUIT BYE` |
 
 The table is in include order, and include order is definition order: a word

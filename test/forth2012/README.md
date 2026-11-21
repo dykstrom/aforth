@@ -21,6 +21,7 @@ upstream README says that the Forth standard committee now maintains it.
 | `core.fr` | John Hayes, 1995 | The same notice as `tester.fr`. |
 | `coreplustest.fth` | Gerry Jackson, 2007 | Public domain. The notice asks that it is kept. |
 | `coreexttest.fth` | Gerry Jackson, 2006, with contributions the file names | Public domain. The notice asks that it is kept. |
+| `exceptiontest.fth` | Gerry Jackson, 2006, with contributions the file names | Public domain. The notice asks that it is kept. |
 | `errorreport.fth` | Gerry Jackson, 2015 | Public domain. The notice asks that it is kept. |
 | `prelimtest.fth` | Gerry Jackson, as the upstream history shows | The file carries no notice, and the upstream repository has no licence file. |
 | `utilities.fth` | Gerry Jackson, as the upstream history shows | The file carries no notice, and the upstream repository has no licence file. |

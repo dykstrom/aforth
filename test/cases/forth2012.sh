@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Johan Dykström
 
-# The Core and Core Extension files of the Forth-2012 test suite.
+# The Core, Core Extension and Exception files of the Forth-2012 test suite.
 #
 # The suite's files are in test/forth2012/, copied from upstream and never
 # edited (ADR 0015). What aforth adds to run them is here in test/cases/: the

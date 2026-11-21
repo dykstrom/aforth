@@ -331,6 +331,9 @@
 // print. It lies inside the definition, which the unwind leaves alone, so it
 // needs no reporting early.
 //
+// ERR_ABORT_QUOTE is -2, so a CATCH catches it as the Exception extensions say,
+// and the message is never printed.
+//
 // Hidden, as (S") is. Run on its own it would read a string nobody laid down.
         DEFCODE "(ABORT\")", 8, abort_quote_run, F_HIDDEN     // ( x c-addr u -- )
         NEED    3
@@ -411,6 +414,7 @@
 #include "words/file.S"
 #include "words/compile.S"
 #include "words/control.S"
+#include "words/exception.S"
 #include "words/quit.S"
 
         DICT_END

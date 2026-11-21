@@ -36,11 +36,12 @@ Forth-2012 test suite.
 | `parsing.sh` | the parsers, the search, and the number conversion |
 | `compile.sh` | `:` and `;`, the defining words, and what `STATE` makes the loop do |
 | `control.sh` | `IF ELSE THEN BEGIN UNTIL WHILE REPEAT AGAIN`, `EXIT` and `RECURSE` |
+| `exception.sh` | `CATCH` and `THROW`, the code each error reaches `CATCH` with, and what a code nobody catches prints |
 | `outer.sh` | the `QUIT` loop, its error messages, `ABORT`, `QUIT`, `BYE` |
 | `startup.sh` | the command line, and the two files cold start reads |
 | `system.sh` | that cold start loads `lib/aforth.f` at all, and `WITHIN` |
-| `forth2012.sh` | the Core and Core Extension files of the Forth-2012 test suite, in one run. See below |
-| `guards.sh` | the depth and room guard of every word that reads or fills a stack |
+| `forth2012.sh` | the Core, Core Extension and Exception files of the Forth-2012 test suite, in one run. See below |
+| `guards.sh` | the depth and room guard of every word that reads or fills a stack, and the codes a guard hands to `CATCH` |
 
 ## Writing a case
 
@@ -278,8 +279,8 @@ routine needs it and thrown away afterwards.
 
 ## The Forth-2012 test suite
 
-`test/cases/forth2012.sh` runs the Core and Core Extension files of the
-Forth-2012 test suite, the suite that other Forth systems are checked with.
+`test/cases/forth2012.sh` runs the Core, Core Extension and Exception files of
+the Forth-2012 test suite, the suite that other Forth systems are checked with.
 The files are in `test/forth2012/`, copied byte for byte from one upstream
 commit and never edited (ADR 0015). The README there names the commit, and
 each file's author and terms.
@@ -288,7 +289,7 @@ aforth's own side is three files in `test/cases/`:
 
 | File | What it is |
 |------|------------|
-| `forth2012.f` | The driver. It includes `prelimtest.fth`, `tester.fr`, `core.fr`, `coreplustest.fth`, `utilities.fth`, `errorreport.fth` and `coreexttest.fth` in that order, then runs `REPORT-ERRORS`. |
+| `forth2012.f` | The driver. It includes `prelimtest.fth`, `tester.fr`, `core.fr`, `coreplustest.fth`, `utilities.fth`, `errorreport.fth`, `coreexttest.fth` and `exceptiontest.fth` in that order, then runs `REPORT-ERRORS`. |
 | `forth2012.sh` | The case. It runs the driver once and checks the result three ways. |
 | `forth2012.out` | The whole of stdout from a run that passed, the banner line dropped. |
 
@@ -334,6 +335,11 @@ file before committing it, and check that the error report still says
 The file has trailing spaces on purpose: `0 1 2 3 4 5 6 7 8 9 ` is what `.`
 prints. An editor set to strip trailing white space breaks the case.
 
+Each `*` in the file is one `TESTING` line in a suite file. `TESTING` in
+`tester.fr` prints a star rather than its text while `VERBOSE` is off. A new
+suite file adds one star for each of its `TESTING` lines to the diff, and the
+stars are not errors.
+
 `.gitignore` ignores `*.out` and names this file as the one exception. A
 second expected file needs an exception of its own, or git never sees it.
 
@@ -341,7 +347,7 @@ second expected file needs an exception of its own, or git never sees it.
 
 1. Clone `https://github.com/gerryjackson/forth2012-test-suite` and check out
    the new commit.
-2. Copy the seven files from its `src/` into `test/forth2012/`, and nothing
+2. Copy the eight files from its `src/` into `test/forth2012/`, and nothing
    else.
 3. Run `cmp` on each file against the clone. Every one must be identical.
 4. Run `make test`. If the error count is not zero, fix aforth, not the copy.

@@ -4,7 +4,8 @@
 \ aforth's system file, included at cold start before init.f; see
 \ docs/system/startup.md. A word goes here when Forth says it more clearly than
 \ assembly, nothing on the dispatch path calls it, and no assembly word compiles
-\ it. Words are in the order of the src/words/ files they would otherwise sit in.
+\ it. Words are in the order of the src/words/ files they would otherwise sit in,
+\ unless a word uses one that file order would put after it.
 
 \ One unsigned compare after shifting the range to start at zero, so a range
 \ that wraps works too.
@@ -22,12 +23,15 @@
 \ reads forwards in the result.
 : HOLDS ( c-addr u -- ) BEGIN DUP WHILE 1- 2DUP + C@ HOLD REPEAT 2DROP ;
 
-: .( ( "ccc<paren>" -- ) [CHAR] ) PARSE TYPE ; IMMEDIATE
+\ A character is a byte (ADR 0004), so a name's first byte is the character,
+\ even when it starts a multi-byte one. A line with no name left on it is
+\ -16, the code for a missing name, which prints aforth: name expected. See
+\ docs/system/parsing.md.
+: CHAR ( "<spaces>name" -- char ) PARSE-NAME 0= IF -16 THROW THEN C@ ;
+: [CHAR] ( C: "<spaces>name" -- ) ( -- char ) CHAR POSTPONE LITERAL ; IMMEDIATE
 
-\ With no name, CHAR reads the byte just past the parse area. [CHAR] raises
-\ ERR_NO_NAME instead, which is why it stays in src/words/compile.S until there
-\ is THROW. See docs/system/parsing.md.
-: CHAR ( "<spaces>name" -- char ) PARSE-NAME DROP C@ ;
+\ After [CHAR], which it uses, though the file order would put it first.
+: .( ( "ccc<paren>" -- ) [CHAR] ) PARSE TYPE ; IMMEDIATE
 
 : INCLUDE ( i*x "<spaces>name" -- j*x ) PARSE-NAME INCLUDED ;
 

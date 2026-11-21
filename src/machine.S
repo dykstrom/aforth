@@ -197,6 +197,9 @@ machine_init:
         str     xzr, [UP, #UV_ERR_ADDR]
         str     xzr, [UP, #UV_ERR_LEN]
 
+        // No CATCH is open, so an error in an included file reports itself.
+        str     xzr, [UP, #UV_CATCH_DEPTH]
+
         // No loop is being compiled. That is a different state from a loop
         // holding no LEAVE, which is 0, and telling them apart is how LEAVE
         // refuses a definition that has no loop to leave.

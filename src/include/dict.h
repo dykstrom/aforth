@@ -100,10 +100,10 @@
         less_num, num, num_s, hold, sign, num_greater, dot_s, words, \
         source, to_in, refill, accept, key, parse_name, parse, word, \
         count, find, tick, environment_q, to_number, q_number, \
-        state, abort, quit, bye, \
+        catch, throw, state, abort, quit, bye, \
         lit, docon, dovar, dodoes, dodefer, domarker, here, unused, pad, allot, comma, c_comma, \
         create, colon, semicolon, immediate, left_bracket, right_bracket, \
-        literal, bracket_char, constant, postpone, to_body, does, \
+        literal, constant, postpone, to_body, does, \
         to, to_run, defer, defer_unset, colon_noname, marker, \
         s_backslash_quote, \
         branch, zero_branch, \

@@ -121,7 +121,8 @@ there is nothing left to parse at the end of one.
 
 `[` and `]` switch `STATE` directly, and `LITERAL` compiles the cell on the
 stack, which is how a value is worked out while a definition is being written
-and then compiled into it. `[CHAR]` is `CHAR` and `LITERAL` in one word.
+and then compiled into it. `[CHAR]` is `CHAR` and `LITERAL` in one word, in
+`lib/aforth.f`.
 `IMMEDIATE` marks the newest entry, which is the definition `;` has just ended.
 
 ## String literals

@@ -142,6 +142,7 @@ guards() {
 . "$HERE/cases/parsing.sh"
 . "$HERE/cases/compile.sh"
 . "$HERE/cases/control.sh"
+. "$HERE/cases/exception.sh"
 . "$HERE/cases/outer.sh"
 . "$HERE/cases/startup.sh"
 . "$HERE/cases/system.sh"

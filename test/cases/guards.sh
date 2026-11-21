@@ -159,6 +159,20 @@ guards '(ABORT")' ': T ABORT" x" ; T' 0
 # COMPILE, is , under a second name, so the guard it reports is the one , has.
 guards "COMPILE," 'COMPILE,' 0
 
+# CATCH wants a token and THROW a code.
+guards "CATCH"    'CATCH'    0
+guards "THROW"    'THROW'    0
+
+# The codes a guard raises reach CATCH as Forth-2012 gives them. Only a guard
+# can raise these, so they are here rather than in cases/exception.sh.
+prints "a data stack underflow reaches CATCH as -4" "' DROP CATCH ." '-4  ok'
+prints "a return stack underflow reaches CATCH as -6" "' R> CATCH ." '-6  ok'
+
+# A word that recurses until the return stack is full throws from deep inside
+# it. CATCH puts the return stack back, so a word that uses it runs after.
+prints "a return stack overflow reaches CATCH as -5" \
+  ": R RECURSE ; ' R CATCH . 1 >R R> ." '-5 1  ok'
+
 # The control-flow words read the data stack because the control-flow stack is
 # the data stack. Each checks its depth before it looks at what is there.
 guards "THEN"    'THEN'    0
@@ -297,6 +311,10 @@ room "S>D"        'DUP S>D'
 # the flag is the push that overflows. The DROP makes room for the string.
 room "ENVIRONMENT?" 'DROP S" MAX-D" ENVIRONMENT?'
 room "'"          "DUP ' DUP"
+
+# The token takes the last cell and CATCH takes it back off. DUP inside the
+# CATCH takes it again, so the 0 CATCH pushes after it is the one too many.
+room "CATCH"      "' DUP CATCH"
 room "?NUMBER"    'DUP ?NUMBER'
 room "STATE"      'DUP STATE'
 room "HERE"       'DUP HERE'

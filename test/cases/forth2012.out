@@ -121,6 +121,8 @@ One line...
 anotherLine
 
 End of Core Extension word tests
+***
+End of Exception word tests
 
 ---------------------------
         Error Report
@@ -130,7 +132,7 @@ Core                    0
 Core extension          0
 Block                   -
 Double number           -
-Exception               -
+Exception               0
 Facility                -
 File-access             -
 Locals                  -

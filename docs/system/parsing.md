@@ -66,12 +66,11 @@ case; see [testing.md](testing.md) for the one name that check cannot really
 see.
 
 `COUNT` turns a counted string into the address and length every other word
-takes. `CHAR` is `PARSE-NAME DROP C@`, in `lib/aforth.f`. `[CHAR]` compiles
-that byte rather than pushing it and could be `CHAR POSTPONE LITERAL` beside it,
-but it is written in assembly in `src/words/compile.S` because it raises
-`ERR_NO_NAME` when there is no name, and a word written in Forth cannot raise
-one of aforth's errors until there is `THROW`. See [A missing
-name](#a-missing-name) and [compiling.md](compiling.md).
+takes. `CHAR` and `[CHAR]` are both in `lib/aforth.f`. `CHAR` is `PARSE-NAME`
+and `C@`, and it throws -16 when there is no name, which is `ERR_NO_NAME`.
+`[CHAR]` is `CHAR POSTPONE LITERAL`, so it compiles the byte rather than
+pushing it and fails the same way. See [A missing name](#a-missing-name) and
+[compiling.md](compiling.md).
 
 ## The search
 
@@ -106,21 +105,22 @@ returns.
 A word that parses a name can reach the end of the line with no name found.
 `PARSE-NAME` then gives a length of 0, at the address just past the parse area.
 Forth-2012 makes this an ambiguous condition, and aforth's words handle it in
-three different ways:
+two different ways:
 
 | Words | With no name |
 |-------|--------------|
-| `:` `CREATE` `CONSTANT` `VALUE` `VARIABLE` `BUFFER:` `DEFER` `MARKER` `[CHAR]` `INCLUDE` | raise `ERR_NO_NAME`, `aforth: name expected` |
+| `:` `CREATE` `CONSTANT` `VALUE` `VARIABLE` `BUFFER:` `DEFER` `MARKER` `CHAR` `[CHAR]` `INCLUDE` | raise `ERR_NO_NAME`, `aforth: name expected` |
 | `'` `[']` `POSTPONE` `TO` `IS` `ACTION-OF` | search for the empty name, find nothing, and raise `ERR_UNDEFINED_WORD`, so the message is `aforth: undefined word` with no name after it |
-| `CHAR` | checks nothing and pushes the byte just past the parse area |
 
-All three are allowed, but they ought to agree. The suite fixes the first two as
-they stand, in `test/cases/compile.sh` and `test/cases/parsing.sh`, so making
-them agree will change a case on purpose. There is no case for `CHAR`, because
-the byte it gives is not one worth fixing in place. `CHAR` is the one a program
-can be misled by, because it hands back a value. Once there is `THROW`, `CHAR`
-can raise `ERR_NO_NAME` from `lib/aforth.f`, and `[CHAR]` can then move there
-as `CHAR POSTPONE LITERAL`.
+Both are allowed, but they ought to agree. The suite fixes both as they stand,
+in `test/cases/compile.sh` and `test/cases/parsing.sh`, so making them agree
+will change a case on purpose. Either way the program gets an error, not a
+value.
+
+`'`, `POSTPONE` and `TO` stay in assembly, although `THROW` could raise their
+error from Forth. When a name is there but the dictionary does not hold it,
+each one's message names it, and `THROW` carries only a number. Written in
+Forth, they would print `aforth: undefined word` with no name after it.
 
 ## Asking about the system
 

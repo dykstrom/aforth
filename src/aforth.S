@@ -207,8 +207,8 @@ ap_return:
 
 // Report what an init file did, unless it needs no reporting.
 //
-// 0 is a file that ran to its end, and quit_report would read it as the first
-// error number rather than as none. ERR_REPORTED has already printed itself
+// 0 is a file that ran to its end, and quit_report would print it as a number
+// with no message of its own rather than as no error. ERR_REPORTED has already printed itself
 // with the file and the line the error happened on, and ABORT and QUIT are not
 // failures; quit_report drops all three, so only the 0 is tested here.
         .p2align        2

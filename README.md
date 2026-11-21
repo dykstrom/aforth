@@ -11,6 +11,8 @@ In the terms Forth-2012 uses to label a system, aforth is:
 
 - Providing the Core word set
 - Providing name(s) from the Core Extensions word set: all but `[COMPILE]`
+- Providing the Exception word set
+- Providing the Exception Extensions word set
 - Providing name(s) from the File-Access word set: all but `BIN`,
   `CREATE-FILE`, `DELETE-FILE`, `R/W`, `RESIZE-FILE`, `W/O`, `WRITE-FILE` and
   `WRITE-LINE`
@@ -19,8 +21,8 @@ In the terms Forth-2012 uses to label a system, aforth is:
 - Providing name(s) from the Programming-Tools word set: `.S` and `WORDS`
 - Providing name(s) from the Programming-Tools Extensions word set: `BYE`
 
-`make test` runs the Core and Core Extension files of the Forth-2012 test
-suite, and they report no errors.
+`make test` runs the Core, Core Extension and Exception files of the
+Forth-2012 test suite, and they report no errors.
 
 At start-up aforth reads two files: the system file `aforth.f` that ships
 beside the binary, and the user's own `init.f` under

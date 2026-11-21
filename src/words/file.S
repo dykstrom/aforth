@@ -359,10 +359,18 @@ ii_refill_failed:
 // Anything else prints here rather than in machine_quit, because the name and
 // the line number are in this frame and in the user variables this level is
 // about to give up, and both are gone by the time the loop reads the number.
+//
+// Nothing prints while a CATCH is open. The program asked to handle the error
+// itself, so the number goes up as it came, for CATCH to hand over. If the
+// program throws it again to the prompt, the message has no traceback.
 ii_error:
         str     x0, [sp, #INC_ERR]      // across quit_report and err_location
+        ldr     x1, [UP, #UV_CATCH_DEPTH]
+        cbnz    x1, ii_pop
         cmp     x0, #ERR_ABORT
-        b.hs    ii_pop                  // ABORT and QUIT are not failures
+        b.eq    ii_pop                  // ABORT and QUIT are not failures
+        cmp     x0, #ERR_QUIT
+        b.eq    ii_pop
         cmp     x0, #ERR_REPORTED
         b.eq    1f
         bl      quit_report             // the message itself, written once

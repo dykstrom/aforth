@@ -53,9 +53,9 @@ re-raises so that they reach the loop from inside a string the way they would
 from any word.
 
 The loop is assembly because it is what enters the machine and reads what
-unwound it. A definition can branch now, but a `QUIT` written in Forth would
-still need `CATCH` and `THROW` to tell an error from a word that finished, and
-aforth has neither. It runs the same parts the words do rather than parts of its
+unwound it. A `QUIT` written in Forth would need `CATCH` and `THROW` to tell an
+error from a word that finished. The loop came before both, and it has not
+moved since. It runs the same parts the words do rather than parts of its
 own: `parse_name_impl`
 cuts the name, `dict_find` searches, `number_impl` converts. `?NUMBER` is
 `number_impl` and nothing else, so the word and the interpreter cannot disagree
@@ -92,8 +92,8 @@ machine the way an error does and still say nothing.
 | Number | What it means | What the loop does |
 |--------|---------------|--------------------|
 | 0 | the parse area is empty | print ` ok`, read the next line |
-| `ERR_QUIT` | `QUIT` ran | empty the return stack, read the next line |
-| `ERR_ABORT` | `ABORT` ran | empty both stacks, read the next line |
+| `ERR_QUIT` | `QUIT` ran, or `-56 THROW` | empty the return stack, read the next line |
+| `ERR_ABORT` | `ABORT` ran, or `-1 THROW` | empty both stacks, read the next line |
 | anything else | a failure | report it, then empty both stacks and read the next line |
 
 Every input source above the terminal is dropped in all three of the last rows,
@@ -117,34 +117,40 @@ terminal's next prompt starts on a line of its own, and returns to `main`.
 `quit_report` in `src/outer.S` writes them on file descriptor 2, as
 `write_stderr` does, and the text lives beside it.
 
-| Number | Text |
-|--------|------|
-| `ERR_DS_UNDERFLOW` | `aforth: data stack underflow` |
-| `ERR_DS_OVERFLOW` | `aforth: data stack overflow` |
-| `ERR_RS_UNDERFLOW` | `aforth: return stack underflow` |
-| `ERR_RS_OVERFLOW` | `aforth: return stack overflow` |
-| `ERR_DIV_ZERO` | `aforth: divide by zero` |
-| `ERR_HOLD_OVERFLOW` | `aforth: pictured output overflow` |
-| `ERR_LINE_TOO_LONG` | `aforth: input line too long` |
-| `ERR_UNDEFINED_WORD` | `aforth: undefined word: ` and the name |
-| `ERR_NO_NAME` | `aforth: name expected` |
-| `ERR_NAME_TOO_LONG` | `aforth: name too long` |
-| `ERR_DICT_FULL` | `aforth: dictionary full` |
-| `ERR_CONTROL_FLOW` | `aforth: unstructured control flow` |
-| `ERR_SOURCE_TOO_DEEP` | `aforth: input sources nested too deep` |
-| `ERR_UNTERMINATED_COMMENT` | `aforth: unterminated comment` |
-| `ERR_OPEN_FAILED` | `aforth: cannot open file: ` and the name |
-| `ERR_DEFER_UNSET` | `aforth: deferred word not set` |
-| `ERR_STRING_TOO_LONG` | `aforth: counted string too long` |
-| `ERR_ABORT_QUOTE` | `aforth: ` and the program's message, or `aforth: aborted` when the message is empty |
+| Number | Code | Text |
+|--------|------|------|
+| `ERR_ABORT_QUOTE` | -2 | `aforth: ` and the program's message, or `aforth: aborted` when the message is empty |
+| `ERR_DS_OVERFLOW` | -3 | `aforth: data stack overflow` |
+| `ERR_DS_UNDERFLOW` | -4 | `aforth: data stack underflow` |
+| `ERR_RS_OVERFLOW` | -5 | `aforth: return stack overflow` |
+| `ERR_RS_UNDERFLOW` | -6 | `aforth: return stack underflow` |
+| `ERR_DICT_FULL` | -8 | `aforth: dictionary full` |
+| `ERR_DIV_ZERO` | -10 | `aforth: divide by zero` |
+| `ERR_UNDEFINED_WORD` | -13 | `aforth: undefined word: ` and the name |
+| `ERR_NO_NAME` | -16 | `aforth: name expected` |
+| `ERR_HOLD_OVERFLOW` | -17 | `aforth: pictured output overflow` |
+| `ERR_STRING_TOO_LONG` | -18 | `aforth: counted string too long` |
+| `ERR_NAME_TOO_LONG` | -19 | `aforth: name too long` |
+| `ERR_CONTROL_FLOW` | -22 | `aforth: unstructured control flow` |
+| `ERR_OPEN_FAILED` | -38 | `aforth: cannot open file: ` and the name |
+| `ERR_UNTERMINATED_COMMENT` | -39 | `aforth: unterminated comment` |
+| `ERR_LINE_TOO_LONG` | -256 | `aforth: input line too long` |
+| `ERR_SOURCE_TOO_DEEP` | -257 | `aforth: input sources nested too deep` |
+| `ERR_DEFER_UNSET` | -258 | `aforth: deferred word not set` |
+| any other | | `aforth: exception ` and the number in signed decimal |
 
-`ERR_REPORTED`, `ERR_ABORT` and `ERR_QUIT` print nothing and stay the three
-highest numbers: `quit_report` tells a message from a silent exit by comparing
-against the last number that has one. That compare names `ERR_ABORT_QUOTE`, so
-a new error with a message must be numbered below it. Numbered above it, the
-error prints nothing at all. An error added in the middle renumbers the ones
-after it, which is allowed — the numbers are runtime only and nothing writes
-one to disk.
+Each number is the code Forth-2012 gives the condition in its table of
+`THROW` codes, so a program that catches one sees the number any other system
+would hand it. The standard keeps -1 to -255 for its own codes and -256 to
+-4095 for a system's. The table has no code for the last three rows, so they
+take system codes from -256 down, and `ERR_REPORTED` is -259.
+
+`ERR_ABORT` (-1), `ERR_QUIT` (-56) and `ERR_REPORTED` print nothing.
+`quit_report` matches each number exactly, so the order of the numbers means
+nothing, and a new error needs a compare and a message of its own. A number
+with no compare prints as a number, which is how `42 THROW` says what it threw.
+`err_signed` writes it, the signed form of the `err_number` that writes a line
+number.
 
 `ERR_REPORTED` means the failure has already said what it was. `include_impl`
 raises it after writing the message and the traceback itself, because the file
@@ -181,6 +187,44 @@ The message is three writes rather than one formatted string, because aforth
 holds no output buffer to format into and `printf` is variadic, which the two
 platforms pass differently.
 
+## CATCH and THROW
+
+`CATCH` and `THROW` are in `src/words/exception.S`. `THROW` raises its number
+the way every error is raised, through `machine_error` and the vector. `CATCH`
+runs its token through `machine_execute`, which is an `aforth_enter` of its
+own, so the raise stops there and `CATCH` reads the number as the result.
+`EVALUATE` and `include_impl` are on that same path and pop their own input
+sources on the way, so the source is back where it was when `CATCH` began.
+
+On a throw, `CATCH` does three things:
+
+- It puts the return stack pointer back to what it was.
+- It puts the data stack back to the depth it had once the token was popped.
+  The items are not restored: one the thrown-from code changed in place keeps
+  its new value, as the suite's test `C4` checks. When the depth already
+  matches, the cached top stays. Otherwise `CATCH` reloads the cached top from
+  the cell below the restored pointer, where `DPUSHM` would have spilled it.
+- It pushes the number.
+
+Both stack pointers wait in `CATCH`'s C stack frame, because the word it runs
+is free to use x27 and x28.
+
+`QUIT` is not caught. It empties the return stack, which is where Forth-2012
+keeps a `CATCH` frame, so `CATCH` raises `ERR_QUIT` again and it reaches the
+loop. `-56 THROW` is `QUIT`'s code and goes the same way. `ABORT` and `ABORT"`
+are caught as -1 and -2, which is the Exception extensions' meaning for both.
+A caught `ABORT"` prints nothing.
+
+`THROW` sets `UV_ERR_LEN` to 0 before it raises, so that a program's
+`-13 THROW` names no word left over from an earlier error, and a `-2 THROW`
+repeats no earlier `ABORT"` message.
+
+`UV_CATCH_DEPTH` counts the `CATCH` frames open. `CATCH` adds one before it
+runs its token and takes it away on every path back, because every raise
+inside it stops at its `aforth_enter` first. `include_impl` reads it: an error
+in an included file under a `CATCH` prints nothing and passes the number up as
+it came. See [files.md](files.md).
+
 ## The one place a guard macro may not go
 
 `ROOM` and `NEED` branch to the handlers in `src/machine.S`, which go through
@@ -209,6 +253,10 @@ exit status after `BYE` and after end of input. `STATE`, `ABORT`, `QUIT` and
 
 What the loop does while `STATE` says compiling is in `test/cases/compile.sh`
 instead, beside the words that set it.
+
+`CATCH`, `THROW`, the code each error reaches `CATCH` with, and what a code
+nobody catches prints are in `test/cases/exception.sh`. The codes only a stack
+guard can raise are in `test/cases/guards.sh`, for the reason below.
 
 What `ABORT` and `QUIT` empty on the return stack is in `test/cases/guards.sh`
 instead, because `RNEED` is the only thing that can see it. The build without

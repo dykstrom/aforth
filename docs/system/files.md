@@ -165,7 +165,8 @@ The standard leaves "the status (open or closed) of any files that were being
 interpreted" implementation-defined when an error stops the interpreting.
 aforth closes there too, so one rule covers every path out. A program that
 wants its descriptor back after a failure has to keep its own copy before it
-calls, and `CATCH` does not exist yet for it to notice the failure with.
+calls. `CATCH` tells the program that the include failed, but by then the file
+is closed.
 
 `include_impl` reports rather than raises, which is what lets it close at all. A
 raise would unwind past its frame before the close, and that frame holds the
@@ -194,6 +195,13 @@ The innermost one calls `quit_report` for the message itself and then writes
 which has no message of its own, so `machine_quit` clears up and prints
 nothing more. `ABORT` and `QUIT` pass through untouched and print nothing:
 they are not failures.
+
+While a `CATCH` is open, `include_impl` prints nothing at all and passes the
+number up as it came. `UV_CATCH_DEPTH` says how many are open. The program
+asked to handle the error itself, so `S" bad.f" ' INCLUDED CATCH` gives -13 for
+the undefined word and writes nothing to stderr. A program that throws the
+number again to the prompt gets the message without the `in` lines, because the
+frames that knew the file and the line are gone.
 
 `INCLUDE-FILE` is handed a descriptor and never sees a name, so its line reads
 `in a file, line 1`. An `EVALUATE` between two files adds no line, a string

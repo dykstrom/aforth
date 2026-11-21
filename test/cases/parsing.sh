@@ -161,6 +161,10 @@ raises "quotes round nothing are no number"   "''"   "aforth: undefined word: ''
 
 prints "CHAR takes the first byte of a name" 'CHAR A .'    '65  ok'
 prints "CHAR takes only the first"           'CHAR abc .'  '97  ok'
+raises "CHAR with no name"                    'CHAR'        'aforth: name expected'
+prints "CHAR with no name throws -16" "' CHAR CATCH
+.S" ' ok
+<1> -16  ok'
 
 # ENVIRONMENT? answers from a table of what aforth can state about itself: the
 # answer's cells and true, or false alone for anything else. A one-cell answer

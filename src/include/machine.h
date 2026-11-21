@@ -201,6 +201,7 @@
                                 // loop that holds none, -1 outside a loop
 #define UV_SRC_TAKEN    256     // bytes the current file line used, its
                                 // newline included
+#define UV_CATCH_DEPTH  264     // how many CATCH frames are open
 
 // The input source stack.
 //
@@ -231,7 +232,7 @@
 // copied and no line buffer is needed. A file source cannot do that, and
 // include_impl carves its line buffer out of its own C stack frame.
 // The stack starts at 512 rather than just above the cells, so that adding a
-// user variable does not move it. The cells reach 264 now.
+// user variable does not move it. The cells reach 272 now.
 #define SRC_STACK_OFF   512
 #define SRC_LEVELS      8
 #define SRC_SLOT        64
@@ -474,21 +475,29 @@
 .Lnonzero_ok\@:
 .endm
 
-// Error numbers a word hands to the routine in UV_ABORT. The guards raise the
-// first four; the fourteen after them are raised by the words that meet them —
-// a divide by zero, a pictured output overflow, an input line too long for the
-// buffer or a string too long for a transient one, a name the dictionary does
-// not hold, a defining word with no name left on the line, a name too long to
-// count in one byte, a dictionary with no room left, a control-flow word given
-// something that is not a place in the dictionary, a source stack with no
-// level free, a file that ends inside a comment, a file INCLUDED could not
-// open, a deferred word run before IS gave it a word to run, a C" string too
-// long to count in one byte, and an ABORT" whose flag was true.
+// Error numbers a word hands to the routine in UV_ABORT. Each one is the code
+// Forth-2012 gives the condition in its table of THROW codes, so CATCH hands a
+// program the same number THROW would, and the number a program THROWs is
+// reported the same way as the one a word raises. The standard reserves -1 to
+// -255 for its own codes and -256 to -4095 for a system's, and the four
+// conditions the table has no code for take system codes from -256 down.
 //
-// The last three are not failures to report. ABORT and QUIT leave the machine
-// the same way an error does, because they must not return to the word that ran
-// them, and machine_quit tells them apart by the number: it prints nothing for
-// either, and empties the data stack for ABORT but not for QUIT.
+// The guards raise the four stack codes. The words that meet the rest raise
+// them: a divide by zero, a pictured output overflow, an input line too long
+// for the buffer or a string too long for a transient one, a name the
+// dictionary does not hold, a defining word with no name left on the line, a
+// name too long to count in one byte, a dictionary with no room left, a
+// control-flow word given something that is not a place in the dictionary, a
+// source stack with no level free, a file that ends inside a comment, a file
+// INCLUDED could not open, a deferred word run before IS gave it a word to
+// run, a C" string too long to count in one byte, and an ABORT" whose flag was
+// true.
+//
+// ABORT and QUIT are not failures to report. They leave the machine the same
+// way an error does, because they must not return to the word that ran them,
+// and machine_quit tells them apart by the number: it prints nothing for
+// either, and empties the data stack for ABORT but not for QUIT. A program
+// that THROWs -1 or -56 gets the same, because those are the codes.
 //
 // ERR_REPORTED is a failure that has already printed. include_impl writes the
 // message and its own traceback line as it unwinds, because the file name and
@@ -496,31 +505,31 @@
 // number. It then raises this instead, and machine_quit clears up without
 // printing a second message.
 //
-// These three stay the highest numbers, because quit_report tells a message
-// from a silent exit by comparing against the last one that has a message.
+// quit_report matches each number exactly, so the order of the numbers means
+// nothing. A number with no message of its own, such as one a program THROWs,
+// prints as a number.
 //
-// The numbers are runtime only. Nothing writes one to disk, so unlike a code
-// field's index they may be renumbered when an error is added in the middle.
-#define ERR_DS_UNDERFLOW        1
-#define ERR_DS_OVERFLOW         2
-#define ERR_RS_UNDERFLOW        3
-#define ERR_RS_OVERFLOW         4
-#define ERR_DIV_ZERO            5
-#define ERR_HOLD_OVERFLOW       6
-#define ERR_LINE_TOO_LONG       7
-#define ERR_UNDEFINED_WORD      8
-#define ERR_NO_NAME             9
-#define ERR_NAME_TOO_LONG       10
-#define ERR_DICT_FULL           11
-#define ERR_CONTROL_FLOW        12
-#define ERR_SOURCE_TOO_DEEP     13
-#define ERR_UNTERMINATED_COMMENT 14
-#define ERR_OPEN_FAILED         15
-#define ERR_DEFER_UNSET         16
-#define ERR_STRING_TOO_LONG     17
-#define ERR_ABORT_QUOTE         18
-#define ERR_REPORTED            19
-#define ERR_ABORT               20
-#define ERR_QUIT                21
+// The numbers are runtime only. Nothing writes one to disk.
+#define ERR_ABORT               -1
+#define ERR_ABORT_QUOTE         -2
+#define ERR_DS_OVERFLOW         -3
+#define ERR_DS_UNDERFLOW        -4
+#define ERR_RS_OVERFLOW         -5
+#define ERR_RS_UNDERFLOW        -6
+#define ERR_DICT_FULL           -8
+#define ERR_DIV_ZERO            -10
+#define ERR_UNDEFINED_WORD      -13
+#define ERR_NO_NAME             -16
+#define ERR_HOLD_OVERFLOW       -17
+#define ERR_STRING_TOO_LONG     -18
+#define ERR_NAME_TOO_LONG       -19
+#define ERR_CONTROL_FLOW        -22
+#define ERR_OPEN_FAILED         -38
+#define ERR_UNTERMINATED_COMMENT -39
+#define ERR_QUIT                -56
+#define ERR_LINE_TOO_LONG       -256
+#define ERR_SOURCE_TOO_DEEP     -257
+#define ERR_DEFER_UNSET         -258
+#define ERR_REPORTED            -259
 
 #endif // AFORTH_MACHINE_H

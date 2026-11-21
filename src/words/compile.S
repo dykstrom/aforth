@@ -192,23 +192,6 @@ hi_full:
         DPOPM
         NEXT
 
-// [CHAR] is CHAR and LITERAL: the first byte of the name it parses, compiled.
-// A character is a byte (ADR 0004), so the first byte of a multi-byte
-// character is what it gives, as CHAR does.
-//
-// CHAR is in lib/aforth.f, and [CHAR] could be CHAR POSTPONE LITERAL there. It
-// is written here instead because it raises ERR_NO_NAME when the line holds no
-// name, which a word written in Forth cannot do until aforth has THROW.
-        DEFCODE "[CHAR]", 6, bracket_char, F_IMMEDIATE  // ( C: "<spaces>name" -- ) ( -- char )
-        bl      parse_name_impl
-        cbz     x1, 1f
-        ldrb    w0, [x0]
-        bl      dict_compile_literal
-        RAISE
-        NEXT
-1:      mov     x0, #ERR_NO_NAME
-        b       machine_error
-
 // CONSTANT builds an entry whose code field is DOCON and stores the value in
 // the parameter field, so running the word pushes it.
         DEFCODE "CONSTANT", 8, constant // ( x "<spaces>name" -- )

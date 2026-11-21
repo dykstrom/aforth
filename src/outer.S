@@ -16,9 +16,9 @@
 // ; and [ get a chance to end the definition. See docs/system/compiling.md.
 //
 // The loop is assembly because it is what enters the machine and reads what
-// unwound it. A definition can branch now, but a QUIT written in Forth would
-// still need CATCH and THROW to tell an error from a word that finished, and
-// aforth has neither. It runs the same parts the words do: parse_name_impl,
+// unwound it. It came before CATCH and THROW, which a QUIT written in Forth
+// would need, and nothing has moved it since. It runs the same parts the
+// words do: parse_name_impl,
 // dict_find and number_impl in src/words/parsing.S, and machine_refill and
 // machine_execute in src/interpreter.S.
 //
@@ -78,6 +78,11 @@ msg_defer_unset:
         .asciz  "aforth: deferred word not set"
 msg_string_too_long:
         .asciz  "aforth: counted string too long"
+
+// A number with no message of its own, such as one a program THROWs. The
+// number follows it in decimal, signed.
+msg_exception:
+        .asciz  "aforth: exception "
 
 // ABORT" supplies its own message, which follows the prefix. An empty one
 // would leave the line ending in the prefix, so it says aborted instead.
@@ -239,6 +244,8 @@ quit_line:
 
         bl      interpret_source
         cbz     x0, quit_ok
+        // A program's -56 THROW and -1 THROW are these two numbers, so they
+        // restart the loop the way QUIT and ABORT do.
         cmp     x0, #ERR_QUIT
         b.eq    quit_restart
         cmp     x0, #ERR_ABORT
@@ -281,7 +288,11 @@ quit_abort:
         FUNC_SIZE(quit_abort)
 
 // Print the error in x0 on file descriptor 2. ABORT and QUIT print nothing:
-// they are how a program leaves what it was doing, not failures.
+// they are how a program leaves what it was doing, not failures. Neither does
+// ERR_REPORTED, which has printed already.
+//
+// Each number is matched exactly. A number with no message of its own prints
+// as a number, so that 42 THROW says what it threw.
 //
 // The message, then a colon and the name when the error names one, then a
 // newline. Three writes rather than one formatted string, because aforth holds
@@ -291,12 +302,18 @@ quit_abort:
         .globl  quit_report
         FUNC_TYPE(quit_report)
 quit_report:
-        stp     x29, x30, [sp, #-16]!
+        stp     x29, x30, [sp, #-32]!
         mov     x29, sp
 
-        cmp     x0, #ERR_ABORT_QUOTE
-        b.hi    qr_done
+        cmp     x0, #ERR_ABORT
+        b.eq    qr_done
+        cmp     x0, #ERR_QUIT
+        b.eq    qr_done
+        cmp     x0, #ERR_REPORTED
+        b.eq    qr_done
 
+        cmp     x0, #ERR_DS_UNDERFLOW
+        b.eq    qr_ds_underflow
         cmp     x0, #ERR_DS_OVERFLOW
         b.eq    qr_ds_overflow
         cmp     x0, #ERR_RS_UNDERFLOW
@@ -331,6 +348,16 @@ quit_report:
         b.eq    qr_string_too_long
         cmp     x0, #ERR_ABORT_QUOTE
         b.eq    qr_abort_quote
+
+// No message of its own, so the number is the message.
+        str     x0, [sp, #16]
+        adr_sym x0, msg_exception
+        bl      write_stderr
+        ldr     x0, [sp, #16]
+        bl      err_signed
+        b       qr_newline
+
+qr_ds_underflow:
         adr_sym x0, msg_ds_underflow
         b       qr_write
 qr_ds_overflow:
@@ -421,7 +448,7 @@ qr_newline:
         bl      err_write
 
 qr_done:
-        ldp     x29, x30, [sp], #16
+        ldp     x29, x30, [sp], #32
         ret
         FUNC_SIZE(quit_report)
 
@@ -476,26 +503,41 @@ err_location:
         ret
         FUNC_SIZE(err_location)
 
-// Write x0 on file descriptor 2 in decimal. A line number is never negative,
-// and twenty digits hold any unsigned 64-bit number, so the digits are built
-// backwards into the frame and written in one call.
+// Write x0 on file descriptor 2 in decimal. err_number reads it unsigned,
+// which is what a line number wants. err_signed reads it signed, which is what
+// a THROW code wants. Twenty digits and a sign hold any 64-bit number, so the
+// digits are built backwards into the frame and written in one call.
 //
 // The pictured output words would do this, but they build into the buffer a
 // program may be part way through using, and an error must not disturb it.
         .p2align        2
+err_signed:
+        stp     x29, x30, [sp, #-48]!
+        mov     x29, sp
+        mov     x7, x0                  // its top bit is the sign
+        cmp     x0, #0
+        cneg    x0, x0, lt              // the most negative stays itself, and
+        b       1f                      // reads right as unsigned
+
 err_number:
         stp     x29, x30, [sp, #-48]!
         mov     x29, sp
-        add     x3, sp, #40             // one past the last digit
+        mov     x7, #0                  // never negative
+
+1:      add     x3, sp, #40             // one past the last digit
         mov     x4, #10
-1:      udiv    x5, x0, x4
+2:      udiv    x5, x0, x4
         msub    x6, x5, x4, x0          // the remainder
         add     x6, x6, #48             // '0'
         sub     x3, x3, #1
         strb    w6, [x3]
         mov     x0, x5
-        cbnz    x0, 1b
-        add     x1, sp, #40
+        cbnz    x0, 2b
+        tbz     x7, #63, 3f
+        mov     w6, #45                 // '-'
+        sub     x3, x3, #1
+        strb    w6, [x3]
+3:      add     x1, sp, #40
         sub     x1, x1, x3
         mov     x0, x3
         bl      err_write

@@ -24,6 +24,9 @@
 
 // ABORT empties the data stack and starts over. machine_quit does the
 // emptying, which is where the stacks are emptied for a reported error too.
+//
+// ERR_ABORT is -1, so ABORT is -1 THROW, as the Exception extensions say, and
+// a CATCH catches it. QUIT is not caught: see src/words/exception.S.
         DEFCODE "ABORT", 5, abort       // ( i*x -- )
         mov     x0, #ERR_ABORT
         b       machine_error
